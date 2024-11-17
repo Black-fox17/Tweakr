@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "tweakr-mvp"
+version = "0.1.0"
+description = "Project Tweakr"
+authors = ["mannyuncharted <omoebun52@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+sqlalchemy = "^2.0.36"
+psycopg2-binary = "^2.9.10"
+pinecone-client = "^5.0.1"
+boto3 = "^1.35.63"
+openai = "^1.54.4"
+pypdf2 = "^3.0.1"
+python-dotenv = "^1.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
