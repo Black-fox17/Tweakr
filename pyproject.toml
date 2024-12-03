@@ -19,6 +19,7 @@ pymongo = {extras = ["srv"], version = "^4.10.1"}
 langchain-mongodb = "^0.2.0"
 langchain-openai = "^0.2.10"
 alembic = "^1.14.0"
+langchain-google-genai = "^2.0.6"
 
 
 [build-system]

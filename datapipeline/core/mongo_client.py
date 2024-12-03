@@ -1,7 +1,9 @@
 import os
 from pymongo import MongoClient
-from langchain_community.vectorstores import MongoDBAtlasVectorSearch
-from langchain_community.embeddings import OpenAIEmbeddings
+# from langchain_community.vectorstores import MongoDBAtlasVectorSearch
+from langchain_mongodb import MongoDBAtlasVectorSearch
+# from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.docstore.document import Document
 
 
@@ -44,7 +46,9 @@ class MongoDBVectorStoreManager:
         - document (Document): The document to store.
         """
         collection = self.get_or_create_collection(collection_name)
-        embeddings = OpenAIEmbeddings()
+        # Swapped the embedding for google's embeddings
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        # embeddings = OpenAIEmbeddings()
         vector_store = MongoDBAtlasVectorSearch(
             collection=collection,
             embedding=embeddings,

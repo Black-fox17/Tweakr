@@ -6,7 +6,7 @@ from sqlalchemy import pool
 
 sys.path.append(os.path.realpath(os.path.dirname(__file__) + "/../../datapipeline"))
 from datapipeline.core.database import SQLALCHEMY_DATABASE_URL, Base
-from datapipeline.models import *
+from datapipeline.models.papers import *
 
 from alembic import context
 

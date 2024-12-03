@@ -4,7 +4,7 @@ import re
 from arxiv import Client, Search, SortCriterion
 
 class ArxivPaperDownloader:
-    def __init__(self, query, max_results=10, download_dir='./store'):
+    def __init__(self, query, max_results: int, download_dir='./store'):
         """
         Initializes the downloader with the search query, maximum number of results,
         and the directory where PDFs will be saved.
