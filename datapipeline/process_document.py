@@ -4,9 +4,7 @@ import os
 from PyPDF2 import PdfReader
 
 from core.openai import extract_keywords, generate_embedding
-from core.pinecone import pinecone_index
 from core.database import SessionLocal, Document
-from core.upload_to_s3 import upload_to_s3
 
 def process_document(file_path, category):
     # Extract text from PDF
@@ -24,10 +22,10 @@ def process_document(file_path, category):
     embedding = generate_embedding(text)
 
     # Store in Pinecone
-    pinecone_index.upsert([(title, embedding)])
+    # pinecone_index.upsert([(title, embedding)])
 
-    # Upload content to S3
-    s3_location = upload_to_s3(file_path, f"{title}.pdf")
+    # # Upload content to S3
+    # s3_location = upload_to_s3(file_path, f"{title}.pdf")
 
     # Store metadata in PostgreSQL
     db_session = SessionLocal()
