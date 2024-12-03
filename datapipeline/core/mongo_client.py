@@ -1,14 +1,16 @@
 import os
 from pymongo import MongoClient
 from langchain_community.vectorstores import MongoDBAtlasVectorSearch
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_community.embeddings import OpenAIEmbeddings
 from langchain.docstore.document import Document
-from datapipeline.core.extract_contents_arxiv_paper import ArxivPaperFetcher
-from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
+
+
+from core.extract_contents_arxiv_paper import ArxivPaperFetcher
+from core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
 
 
 class MongoDBVectorStoreManager:
-    def __init__(self, connection_string: str, db_name: str = MONGO_DB_NAME):
+    def __init__(self, connection_string: str = MongoDBAtlasVectorSearch, db_name: str = MONGO_DB_NAME):
         """
         Initializes the MongoDB connection.
 
@@ -51,34 +53,34 @@ class MongoDBVectorStoreManager:
         vector_store.add_documents([document])
 
 # Example usage:
-if __name__ == "__main__":
-    # Fetch paper content
-    paper_title = "Bit symmetry entails the symmetry of the quantum transition probability"
-    fetcher = ArxivPaperFetcher(title_query=paper_title)
-    fetcher.fetch_paper()
-    content = fetcher.get_content()
+# if __name__ == "__main__":
+#     # Fetch paper content
+#     paper_title = "Bit symmetry entails the symmetry of the quantum transition probability"
+#     fetcher = ArxivPaperFetcher(title_query=paper_title)
+#     fetcher.fetch_paper()
+#     content = fetcher.get_content()
 
-    if content:
-        # Initialize MongoDB manager
-        mongo_uri = MONGODB_ATLAS_CLUSTER_URI
-        db_name = MONGO_DB_NAME
-        category = "quantum_physics"  # Example category; adjust as needed
+#     if content:
+#         # Initialize MongoDB manager
+#         mongo_uri = MONGODB_ATLAS_CLUSTER_URI
+#         db_name = MONGO_DB_NAME
+#         category = "quantum_physics"  # Example category; adjust as needed
 
-        mongo_manager = MongoDBVectorStoreManager(connection_string=mongo_uri, db_name=db_name)
+#         mongo_manager = MongoDBVectorStoreManager(connection_string=mongo_uri, db_name=db_name)
 
-        # Create a Document object
-        document = Document(
-            page_content=content,
-            metadata={
-                "title": fetcher.get_title(),
-                "authors": fetcher.get_authors(),
-                "published_date": fetcher.get_published_date(),
-                "summary": fetcher.get_summary()
-            }
-        )
+#         # Create a Document object
+#         document = Document(
+#             page_content=content,
+#             metadata={
+#                 "title": fetcher.get_title(),
+#                 "authors": fetcher.get_authors(),
+#                 "published_date": fetcher.get_published_date(),
+#                 "summary": fetcher.get_summary()
+#             }
+#         )
 
-        # Store document in the vector store
-        mongo_manager.store_document(collection_name=category, document=document)
-        print(f"Document stored in collection '{category}'.")
-    else:
-        print("No content fetched to store.")
+#         # Store document in the vector store
+#         mongo_manager.store_document(collection_name=category, document=document)
+#         print(f"Document stored in collection '{category}'.")
+#     else:
+#         print("No content fetched to store.")

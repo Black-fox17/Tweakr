@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from contextlib import contextmanager
 
-from datapipeline.core.constants import SQLALCHEMY_DATABASE_URL
+from core.constants import SQLALCHEMY_DATABASE_URL
 
 from sqlalchemy.orm import relationship, declarative_base
 
