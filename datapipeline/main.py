@@ -176,7 +176,7 @@ class PapersPipeline:
                     "title": fetcher.get_title(),
                     "category": category,
                     "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-                    "keywords": None,  # Add logic to extract keywords if available
+                    "keywords": keywords,  # Add logic to extract keywords if available
                     "collection_name": category,
                     "is_processed": True
                 }
