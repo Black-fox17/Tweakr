@@ -79,7 +79,6 @@ class PaperKeywordMatcher:
                         keyword.strip().strip("\"").strip("'")
                         for keyword in paper.keywords.split(",")
                     )
-                    # print(f"DB Keywords for '{paper.title}': {db_keywords}")
 
                     # Compare with extracted keywords
                     extracted_keywords_set = set(extracted_keywords)
