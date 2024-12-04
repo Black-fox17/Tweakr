@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, Integer, String, Date, JSON, Text, Boolean
 
-from core.database import Base
+from datapipeline.core.database import Base
 
 
 class Papers(Base):

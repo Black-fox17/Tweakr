@@ -4,7 +4,7 @@ from langchain_google_genai import (
     HarmCategory,
 )
 from langchain_core.prompts import ChatPromptTemplate
-from core.retry_with_backoff import retry_with_backoff
+from datapipeline.core.retry_with_backoff import retry_with_backoff
 
 
 

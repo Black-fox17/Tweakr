@@ -8,6 +8,7 @@ __pycache__/
 .env
 
 # Distribution / packaging
+/export_path.sh
 .Python
 build/
 store/

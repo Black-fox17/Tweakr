@@ -7,8 +7,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.docstore.document import Document
 
 
-from core.extract_contents_arxiv_paper import ArxivPaperFetcher
-from core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
+from datapipeline.core.extract_contents_arxiv_paper import ArxivPaperFetcher
+from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
 
 
 class MongoDBVectorStoreManager:
@@ -22,6 +22,13 @@ class MongoDBVectorStoreManager:
         """
         self.client = MongoClient(connection_string)
         self.db = self.client[db_name]
+
+    def document_exists(self, collection_name: str, title: str) -> bool:
+        """
+        Check if a document with the given title exists in the specified MongoDB collection.
+        """
+        collection = self.get_or_create_collection(collection_name)
+        return collection.find_one({"metadata.title": title}) is not None
 
     def get_or_create_collection(self, collection_name: str):
         """

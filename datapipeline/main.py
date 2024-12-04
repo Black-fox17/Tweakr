@@ -9,13 +9,13 @@ from langchain_google_genai import (
 )
 from langchain_core.prompts import ChatPromptTemplate
 
-from core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
-from models.papers import Papers
-from core.download_arxiv_paper import ArxivPaperDownloader
-from core.extract_contents_arxiv_paper import ArxivPaperFetcher
-from core.mongo_client import MongoDBVectorStoreManager
-from core.database import get_session_with_ctx_manager
-from core.retry_with_backoff import retry_with_backoff
+from datapipeline.core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
+from datapipeline.models.papers import Papers
+from datapipeline.core.download_arxiv_paper import ArxivPaperDownloader
+from datapipeline.core.extract_contents_arxiv_paper import ArxivPaperFetcher
+from datapipeline.core.mongo_client import MongoDBVectorStoreManager
+from datapipeline.core.database import get_session_with_ctx_manager
+from datapipeline.core.retry_with_backoff import retry_with_backoff
 
 
 class PapersPipeline:
@@ -44,6 +44,7 @@ class PapersPipeline:
         )
 
 
+
     def extract_keywords(self, content: str) -> list:
         """
         Extract keywords from the paper content using ChatGoogleGenerativeAI.
@@ -52,10 +53,10 @@ class PapersPipeline:
             def fetch_response():
                 chain = self.prompt | self.llm
                 return chain.invoke({"text": content})
-            
+
             # Call the fetch_response function with retry logic
             response = retry_with_backoff(fetch_response, max_retries=1, initial_delay=3)
-            print("Response: ", response)
+            print("Raw Response: ", response)
 
             # Check if the response is a dictionary and extract the "content" field
             if isinstance(response, dict) and "content" in response:
@@ -64,20 +65,25 @@ class PapersPipeline:
                 # Attempt to parse the response as a string
                 response_str = str(response)
                 if "content=" in response_str:
-                    content_start = response_str.find("content=\"") + len("content=\"")
-                    content_end = response_str.find("\"", content_start)
+                    content_start = response_str.find("content='") + len("content='")
+                    content_end = response_str.find("'", content_start)
                     content_text = response_str[content_start:content_end]
                 else:
                     raise ValueError("Could not extract 'content' from response.")
 
-            # Process the content text line by line using splitlines()
+            # Clean and process the content text
             content_text = content_text.replace("\\n", "\n")
             keywords = []
+
             for line in content_text.splitlines():
                 # Strip leading '*' or '**', as well as any extra spaces
-                cleaned_keyword = line.lstrip("* ").lstrip("**").strip("\n*")
-                if cleaned_keyword:  # Skip empty lines
+                cleaned_keyword = line.lstrip("* ").lstrip("**").strip()
+                if cleaned_keyword and not any(
+                    unwanted in cleaned_keyword for unwanted in ["additional_kwargs", "response_metadata", "usage_metadata"]
+                ):
                     keywords.append(cleaned_keyword)
+
+            print("Extracted Keywords: ", keywords)
             return keywords
 
         except Exception as e:
@@ -89,27 +95,20 @@ class PapersPipeline:
     def save_paper_metadata(self, session: Session, paper_data: dict):
         """
         Save or update paper metadata in the database.
-        If the paper exists and keywords are empty (None or empty list), update the keywords field.
+        If the paper exists, skip saving or update the keywords if necessary.
         """
         try:
             # Check if the paper already exists
             existing_paper = session.query(Papers).filter_by(title=paper_data['title']).first()
 
             if existing_paper:
-                # Log current keywords for debugging
-                print(f"Existing paper keywords: {existing_paper.keywords}")
-                print(f"New keywords to update: {paper_data.get('keywords')}")
-
-                # Update keywords if they are None or an empty list
-                if existing_paper.keywords is None or not existing_paper.keywords:
-                    if paper_data.get('keywords'):
-                        existing_paper.keywords = paper_data['keywords']
-                        session.commit()  # Commit the update
-                        print(f"Updated keywords for paper: {existing_paper.title}")
-                    else:
-                        print("No new keywords provided for update.")
-                else:
-                    print(f"Paper '{existing_paper.title}' already exists with keywords: {existing_paper.keywords}")
+                print(f"Paper '{existing_paper.title}' already exists in the database.")
+                # Update keywords if they are empty or None
+                if not existing_paper.keywords and paper_data.get('keywords'):
+                    existing_paper.keywords = paper_data['keywords']
+                    session.commit()
+                    print(f"Updated keywords for paper: {existing_paper.title}")
+                return  # Skip saving the paper as it already exists
             else:
                 # Add new paper record
                 paper = Papers(
@@ -121,7 +120,7 @@ class PapersPipeline:
                     is_processed=paper_data.get('is_processed', False)
                 )
                 session.add(paper)
-                session.commit()  # Commit the new record
+                session.commit()
                 print(f"Added new paper: {paper.title}")
         except IntegrityError:
             session.rollback()
@@ -129,7 +128,6 @@ class PapersPipeline:
         except Exception as e:
             session.rollback()
             print(f"An error occurred while saving paper metadata: {e}")
-
 
     def process_papers(self, query: str, category: str, max_results: int = 20, download_dir: str = './store'):
         """
@@ -141,6 +139,11 @@ class PapersPipeline:
         for paper in downloaded_papers:
             print(f"Processing paper: {paper['title']}")
 
+            # Check if the paper title already exists in MongoDB
+            if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
+                print(f"Paper '{paper['title']}' already exists in MongoDB. Skipping.")
+                continue
+
             # Fetch paper content
             fetcher = ArxivPaperFetcher(title_query=paper['title'])
             fetcher.fetch_paper()
@@ -149,7 +152,7 @@ class PapersPipeline:
             if content:
                 # Extract keywords
                 keywords = self.extract_keywords(content)
-                print("Keywords to store: ", keywords)
+                # print("Keywords to store: ", keywords)
 
                 # Store content in MongoDB vector store
                 document = Document(
@@ -170,7 +173,7 @@ class PapersPipeline:
                     "title": fetcher.get_title(),
                     "category": category,
                     "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-                    "keywords": keywords,  # Add logic to extract keywords if available
+                    "keywords": keywords,
                     "collection_name": category,
                     "is_processed": True
                 }
@@ -183,4 +186,4 @@ class PapersPipeline:
 # Example Usage
 if __name__ == "__main__":
     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
-    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=10, download_dir='./store')
+    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=20, download_dir='./store')
