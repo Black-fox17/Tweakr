@@ -44,7 +44,7 @@ class ExtractKeywords:
             
             # Call the fetch_response function with retry logic
             response = retry_with_backoff(fetch_response, max_retries=1, initial_delay=3)
-            print("Response: ", response)
+            # print("Response: ", response)
 
             # Check if the response is a dictionary and extract the "content" field
             if isinstance(response, dict) and "content" in response:

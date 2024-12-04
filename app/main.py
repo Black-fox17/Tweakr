@@ -79,7 +79,7 @@ class PaperKeywordMatcher:
                         keyword.strip().strip("\"").strip("'")
                         for keyword in paper.keywords.split(",")
                     )
-                    print(f"DB Keywords for '{paper.title}': {db_keywords}")
+                    # print(f"DB Keywords for '{paper.title}': {db_keywords}")
 
                     # Compare with extracted keywords
                     extracted_keywords_set = set(extracted_keywords)
@@ -87,45 +87,6 @@ class PaperKeywordMatcher:
                         matching_titles.append(paper.title)
 
             return matching_titles
-
-
-    # def match_keywords(self, file_path: str, category: str) -> list:
-    #     """
-    #     Matches keywords from a file with those in the database for a specific category.
-    #     """
-    #     # Step 1: Read content from the file
-    #     file_content = self.read_file_content(file_path)
-    #     if not file_content:
-    #         print("File content is empty. Aborting.")
-    #         return []
-
-    #     # Step 2: Extract keywords from the file
-    #     extracted_keywords = self.keyword_extractor.extract_keywords(file_content)
-    #     if not extracted_keywords:
-    #         print("No keywords extracted from the file. Aborting.")
-    #         return []
-
-    #     print(f"Extracted Keywords: {extracted_keywords}")
-
-    #     # Step 3: Fetch papers from the database by category
-    #     with get_session_with_ctx_manager() as session:
-    #         papers = self.fetch_papers_by_category(session, category)
-    #         if not papers:
-    #             print(f"No papers found for category '{category}'.")
-    #             return []
-
-    #         # Step 4: Match keywords
-    #         matching_titles = []
-    #         for paper in papers:
-    #             if paper.keywords:  # Ensure the paper has keywords
-    #                 # print(f"Paper: {paper.title}, Keywords: {paper.keywords}")
-    #                 db_keywords = set(paper.keywords)
-    #                 print(f"DB Keywords: {db_keywords}")
-    #                 extracted_keywords_set = set(extracted_keywords)
-    #                 if db_keywords.intersection(extracted_keywords_set):
-    #                     matching_titles.append(paper.title)
-
-    #         return matching_titles
 
 
 if __name__ == "__main__":
