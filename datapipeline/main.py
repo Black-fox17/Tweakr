@@ -1,5 +1,3 @@
-import time
-from contextlib import contextmanager
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
@@ -54,11 +52,7 @@ class PapersPipeline:
             def fetch_response():
                 chain = self.prompt | self.llm
                 return chain.invoke({"text": content})
-            # # Use the chain to invoke the prompt and get the response
-            # chain = self.prompt | self.llm
-            # response = chain.invoke({"text": content})
-            # print("Response: ", response)
-
+            
             # Call the fetch_response function with retry logic
             response = retry_with_backoff(fetch_response, max_retries=1, initial_delay=3)
             print("Response: ", response)
