@@ -108,6 +108,12 @@ class PapersPipeline:
                     existing_paper.keywords = paper_data['keywords']
                     session.commit()
                     print(f"Updated keywords for paper: {existing_paper.title}")
+
+                # Update authors if they are empty or None
+                if not existing_paper.authors and paper_data.get('authors'):
+                    existing_paper.authors = paper_data['authors']
+                    session.commit()
+                    print(f"Updated authors for paper: {existing_paper.title}")
                 return  # Skip saving the paper as it already exists
             else:
                 # Add new paper record
@@ -115,6 +121,7 @@ class PapersPipeline:
                     title=paper_data['title'],
                     category=paper_data['category'],
                     pub_date=paper_data['published_date'],
+                    authors=paper_data['authors'],
                     collection_name=paper_data['collection_name'],
                     keywords=paper_data.get('keywords', []),
                     is_processed=paper_data.get('is_processed', False)
@@ -172,6 +179,7 @@ class PapersPipeline:
                 paper_data = {
                     "title": fetcher.get_title(),
                     "category": category,
+                    "authors": fetcher.get_authors(),
                     "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
                     "keywords": keywords,
                     "collection_name": category,

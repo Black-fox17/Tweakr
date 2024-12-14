@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
+from app.core.references_generator import ReferenceGenerator
 
 class PaperKeywordMatcher:
     def __init__(self):
@@ -98,5 +99,12 @@ if __name__ == "__main__":
         print("Matching Papers:")
         for title in matching_titles:
             print(f"- {title}")
+
+        reference_generator = ReferenceGenerator(style="APA")
+        references = reference_generator.generate_references(matching_titles, category)
+
+        print("\nReferences:")
+        for reference in references:
+            print(f"- {reference}")
     else:
         print("No matching papers found.")
