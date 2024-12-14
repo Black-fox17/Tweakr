@@ -194,4 +194,4 @@ class PapersPipeline:
 # Example Usage
 if __name__ == "__main__":
     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
-    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=20, download_dir='./store')
+    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=30, download_dir='./store')
