@@ -106,5 +106,10 @@ if __name__ == "__main__":
         print("\nReferences:")
         for reference in references:
             print(f"- {reference}")
+        try:
+            modified_file_path = matcher.process_draft(file_path, matching_titles, category)
+            print(f"Modified draft saved to: {modified_file_path}")
+        except Exception as e:
+            print(f"Error processing draft: {e}")
     else:
         print("No matching papers found.")
