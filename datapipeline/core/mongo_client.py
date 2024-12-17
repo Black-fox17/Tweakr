@@ -1,14 +1,13 @@
 import os
 from pymongo import MongoClient, UpdateOne
 from langchain_mongodb import MongoDBAtlasVectorSearch
-# from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+
 from langchain.docstore.document import Document
 
 
 from datapipeline.core.extract_contents_arxiv_paper import ArxivPaperFetcher
 from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
-
+from datapipeline.core.utils import embeddings
 
 class MongoDBVectorStoreManager:
     def __init__(self, connection_string: str = MongoDBAtlasVectorSearch, db_name: str = MONGO_DB_NAME):
@@ -55,9 +54,7 @@ class MongoDBVectorStoreManager:
         - document (Document): The document to store.
         """
         collection = self.get_or_create_collection(collection_name)
-        # Swapped the embedding for google's embeddings
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        # embeddings = OpenAIEmbeddings()
+        
         vector_store = MongoDBAtlasVectorSearch(
             collection=collection,
             embedding=embeddings,
@@ -67,8 +64,30 @@ class MongoDBVectorStoreManager:
 
         print(f"Document '{document.metadata['title']}' stored successfully.")
 
+    def update_documents(self, collection_name: str, updates: list[dict]):
+        """
+        Updates multiple documents in a batch operation.
 
-    def update_document(self, collection_name: str, title: str, updated_metadata: dict):
+        Parameters:
+        - collection_name (str): MongoDB collection name.
+        - updates (list): A list of dictionaries with 'title' and 'updated_metadata'.
+        """
+        collection = self.get_or_create_collection(collection_name)
+
+        bulk_operations = [
+            UpdateOne(
+                {"metadata.title": update["title"]},
+                {"$set": {f"metadata.{key}": value for key, value in update["updated_metadata"].items()}}
+            )
+            for update in updates
+        ]
+
+        if bulk_operations:
+            result = collection.bulk_write(bulk_operations)
+            print(f"Batch update complete. Matched: {result.matched_count}, Modified: {result.modified_count}")
+
+
+    def single_update_document(self, collection_name: str, title: str, updated_metadata: dict):
         """
         Updates a document's metadata in the MongoDB collection.
 
@@ -125,7 +144,4 @@ class MongoDBVectorStoreManager:
 
         # Check if all required fields are present and not empty
         metadata = document.get("metadata", {})
-        for field in required_fields:
-            if not metadata.get(field):  # Empty or missing field
-                return False
-        return True
+        return not any(field not in metadata or not metadata[field] for field in required_fields)

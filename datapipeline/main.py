@@ -156,6 +156,8 @@ class PapersPipeline:
         # Define required fields for completeness check
         required_fields = ["title", "authors", "published_date", "keywords", "url", "summary", "content"]
 
+        # updates = []
+        # TODO: implement bulk update of metadata
         for paper in downloaded_papers:
             print(f"Processing paper: {paper['title']}")
 
@@ -186,8 +188,15 @@ class PapersPipeline:
                         "content": content
                     }
                 )
-                self.mongo_manager.store_document(collection_name=category, document=document)
-                print(f"Document stored in MongoDB collection '{category}'.")
+                if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
+                    print(f"Paper '{paper['title']}' already exists in MongoDB. Updating metadata...")
+                    # TODO: implement bulk update of metadata
+                    # updates.append({"title": paper['title'], "updated_metadata": metadata})
+                    self.mongo_manager.single_update_document(collection_name=category, title=paper['title'], updated_metadata=updated_metadata)
+                else:
+                    print(f"Paper '{paper['title']}' does not exist in MongoDB. Storing new document...")
+                    self.mongo_manager.store_document(collection_name=category, document=document)
+                    print(f"Document stored in MongoDB collection '{category}'.")
 
                 # Save paper metadata to SQL database
                 paper_data = {
@@ -205,65 +214,6 @@ class PapersPipeline:
                     self.save_paper_metadata(session, paper_data)
             else:
                 print(f"No content found for paper: {paper['title']}")
-
-
-    # def process_papers(self, query: str, category: str, max_results: int = 20, download_dir: str = './store'):
-    #     """
-    #     Process papers by downloading, fetching their contents, and storing them in the database and MongoDB.
-    #     """
-    #     downloader = ArxivPaperDownloader(query=query, max_results=max_results, download_dir=download_dir)
-    #     downloaded_papers = downloader.download_papers()
-
-    #     for paper in downloaded_papers:
-    #         print(f"Processing paper: {paper['title']}")
-
-    #         # Check if the paper title already exists in MongoDB
-    #         if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
-    #             print(f"Paper '{paper['title']}' already exists in MongoDB. Skipping.")
-    #             continue
-
-    #         # Fetch paper content
-    #         fetcher = ArxivPaperFetcher(title_query=paper['title'])
-    #         fetcher.fetch_paper()
-    #         content = fetcher.get_content()
-
-    #         if content:
-    #             # Extract keywords
-    #             keywords = self.extract_keywords(content)
-    #             # print("Keywords to store: ", keywords)
-
-    #             # Store content in MongoDB vector store
-    #             document = Document(
-    #                 page_content=content,
-    #                 metadata={
-    #                     "title": fetcher.get_title(),
-    #                     "authors": fetcher.get_authors(),
-    #                     "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-    #                     "keywords": keywords,
-    #                     "url": fetcher.get_links(),
-    #                     "summary": fetcher.get_summary(),
-    #                     "content": content
-    #                 }
-    #             )
-    #             self.mongo_manager.store_document(collection_name=category, document=document)
-    #             print(f"Document stored in MongoDB collection '{category}'.")
-
-    #             # Save paper metadata to SQL database
-    #             paper_data = {
-    #                 "title": fetcher.get_title(),
-    #                 "category": category,
-    #                 "authors": fetcher.get_authors(),
-    #                 "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-    #                 "url": fetcher.get_links(),
-    #                 "keywords": keywords,
-    #                 "collection_name": category,
-    #                 "is_processed": True
-    #             }
-
-    #             with get_session_with_ctx_manager() as session:
-    #                 self.save_paper_metadata(session, paper_data)
-    #         else:
-    #             print(f"No content found for paper: {paper['title']}")
 
 # Example Usage
 if __name__ == "__main__":

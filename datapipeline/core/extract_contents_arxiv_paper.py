@@ -25,7 +25,7 @@ class ArxivPaperFetcher:
         documents = self.arxiv.load(self.title_query)
         if documents:
             self.document = documents[0]
-            print("Metadata: ", self.document.metadata)
+            # print("Metadata: ", self.document.metadata)
             print(f"Loaded document: {self.document.metadata.get('Title')}")
         else:
             print("No document found matching the title query.")
