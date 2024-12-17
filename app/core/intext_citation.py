@@ -148,17 +148,3 @@ class InTextCitationProcessor:
         modified_file_path = self.save_modified_draft(file_path, modified_content)
 
         return modified_file_path
-
-## Example usage
-# if __name__ == "__main__":
-#     matcher = InTextCitationProcessor(style="APA")
-
-#     file_path = "/path/to/your/draft.docx"
-#     category = "quantum_physics"
-#     matching_titles = ["Quantum Computing Basics", "Advanced Quantum Mechanics"]
-
-#     try:
-#         modified_file_path = matcher.process_draft(file_path, matching_titles, category)
-#         print(f"Modified draft saved to: {modified_file_path}")
-#     except Exception as e:
-#         print(f"Error processing draft: {e}")

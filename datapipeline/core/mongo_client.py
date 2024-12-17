@@ -1,6 +1,5 @@
 import os
-from pymongo import MongoClient
-# from langchain_community.vectorstores import MongoDBAtlasVectorSearch
+from pymongo import MongoClient, UpdateOne
 from langchain_mongodb import MongoDBAtlasVectorSearch
 # from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -23,12 +22,14 @@ class MongoDBVectorStoreManager:
         self.client = MongoClient(connection_string)
         self.db = self.client[db_name]
 
+
     def document_exists(self, collection_name: str, title: str) -> bool:
         """
         Check if a document with the given title exists in the specified MongoDB collection.
         """
         collection = self.get_or_create_collection(collection_name)
         return collection.find_one({"metadata.title": title}) is not None
+
 
     def get_or_create_collection(self, collection_name: str):
         """
@@ -43,6 +44,7 @@ class MongoDBVectorStoreManager:
         if collection_name not in self.db.list_collection_names():
             self.db.create_collection(collection_name)
         return self.db[collection_name]
+
 
     def store_document(self, collection_name: str, document: Document):
         """
@@ -63,35 +65,67 @@ class MongoDBVectorStoreManager:
         )
         vector_store.add_documents([document])
 
-# Example usage:
-# if __name__ == "__main__":
-#     # Fetch paper content
-#     paper_title = "Bit symmetry entails the symmetry of the quantum transition probability"
-#     fetcher = ArxivPaperFetcher(title_query=paper_title)
-#     fetcher.fetch_paper()
-#     content = fetcher.get_content()
+        print(f"Document '{document.metadata['title']}' stored successfully.")
 
-#     if content:
-#         # Initialize MongoDB manager
-#         mongo_uri = MONGODB_ATLAS_CLUSTER_URI
-#         db_name = MONGO_DB_NAME
-#         category = "quantum_physics"  # Example category; adjust as needed
 
-#         mongo_manager = MongoDBVectorStoreManager(connection_string=mongo_uri, db_name=db_name)
+    def update_document(self, collection_name: str, title: str, updated_metadata: dict):
+        """
+        Updates a document's metadata in the MongoDB collection.
 
-#         # Create a Document object
-#         document = Document(
-#             page_content=content,
-#             metadata={
-#                 "title": fetcher.get_title(),
-#                 "authors": fetcher.get_authors(),
-#                 "published_date": fetcher.get_published_date(),
-#                 "summary": fetcher.get_summary()
-#             }
-#         )
+        Parameters:
+        - collection_name (str): Name of the collection.
+        - title (str): Title of the document to identify it.
+        - updated_metadata (dict): The updated metadata to set.
+        """
+        collection = self.get_or_create_collection(collection_name)
+        query = {"metadata.title": title}  # Query by title
+        update_fields = {"$set": {f"metadata.{key}": value for key, value in updated_metadata.items()}}
 
-#         # Store document in the vector store
-#         mongo_manager.store_document(collection_name=category, document=document)
-#         print(f"Document stored in collection '{category}'.")
-#     else:
-#         print("No content fetched to store.")
+        # Perform the update
+        result = collection.update_one(query, update_fields)
+
+        if result.matched_count:
+            print(f"Document '{title}' updated successfully.")
+        else:
+            print(f"Document '{title}' not found. No updates performed.")
+
+
+    def get_document(self, collection_name: str, title: str) -> dict:
+        """
+        Retrieves a document from the MongoDB collection by title.
+
+        Parameters:
+        - collection_name (str): Name of the collection.
+        - title (str): Title of the document to fetch.
+
+        Returns:
+        - dict: The document retrieved, or None if not found.
+        """
+        collection = self.get_or_create_collection(collection_name)
+        document = collection.find_one({"metadata.title": title})
+        return document
+
+    def is_document_complete(self, collection_name: str, title: str, required_fields: list) -> bool:
+        """
+        Checks if a document has all required fields populated.
+
+        Parameters:
+        - collection_name (str): The collection to check.
+        - title (str): The title of the document.
+        - required_fields (list): List of required fields to verify completeness.
+
+        Returns:
+        - bool: True if the document is complete, False otherwise.
+        """
+        collection = self.get_or_create_collection(collection_name)
+        document = collection.find_one({"metadata.title": title})
+
+        if not document:
+            return False  # Document does not exist
+
+        # Check if all required fields are present and not empty
+        metadata = document.get("metadata", {})
+        for field in required_fields:
+            if not metadata.get(field):  # Empty or missing field
+                return False
+        return True
