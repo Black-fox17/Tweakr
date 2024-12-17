@@ -5,6 +5,7 @@ from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
 from app.core.references_generator import ReferenceGenerator
+from app.core.intext_citation import InTextCitationProcessor
 
 class PaperKeywordMatcher:
     def __init__(self):
@@ -107,7 +108,8 @@ if __name__ == "__main__":
         for reference in references:
             print(f"- {reference}")
         try:
-            modified_file_path = matcher.process_draft(file_path, matching_titles, category)
+            intext_citation = InTextCitationProcessor(style="APA")
+            modified_file_path = intext_citation.process_draft(file_path, matching_titles, category)
             print(f"Modified draft saved to: {modified_file_path}")
         except Exception as e:
             print(f"Error processing draft: {e}")

@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.orm import Session
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.models.papers import Papers
@@ -59,9 +59,7 @@ class ReferenceGenerator:
         """
         title = paper.title.capitalize()
         pub_date = paper.pub_date
-        print("Pub date: ", pub_date)
-        print("Pub date type: ", type(pub_date))
-        publication_year = pub_date.year if isinstance(pub_date, datetime) else "n.d."
+        publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "APA")
         return f"""{formatted_authors} ({publication_year}). "{title}". {paper.category}."""
@@ -72,7 +70,7 @@ class ReferenceGenerator:
         """
         title = paper.title
         pub_date = paper.pub_date
-        publication_year = pub_date.year if isinstance(pub_date, datetime) else "n.d."
+        publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "MLA")
         return f"""{formatted_authors}. "{title}." {paper.category}, {publication_year}."""
@@ -84,7 +82,7 @@ class ReferenceGenerator:
         """
         title = paper.title
         pub_date = paper.pub_date
-        publication_year = pub_date.year if isinstance(pub_date, datetime) else "n.d."
+        publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "Chicago")
         return f"""{formatted_authors}. "{title}". {paper.category}, {publication_year}."""

@@ -25,9 +25,16 @@ class ArxivPaperFetcher:
         documents = self.arxiv.load(self.title_query)
         if documents:
             self.document = documents[0]
+            print("Metadata: ", self.document.metadata)
             print(f"Loaded document: {self.document.metadata.get('Title')}")
         else:
             print("No document found matching the title query.")
+
+    def get_links(self) -> Optional[str]:
+        """
+        Returns the links of the fetched paper.
+        """
+        return self.document.metadata.get('links')[0] if self.document else None
 
     def get_title(self) -> Optional[str]:
         """
@@ -64,8 +71,9 @@ class ArxivPaperFetcher:
 #     paper_title = "Bit symmetry entails the symmetry of thequantum transition probability"
 #     fetcher = ArxivPaperFetcher(title_query=paper_title)
 #     fetcher.fetch_paper()
-#     print("Title:", fetcher.get_title())
-#     print("Authors:", fetcher.get_authors())
-#     print("Published Date:", fetcher.get_published_date())
-#     print("Summary:", fetcher.get_summary())
-#     print("Content:", fetcher.get_content())
+#     print("Links:", fetcher.get_links())
+    # print("Title:", fetcher.get_title())
+    # print("Authors:", fetcher.get_authors())
+    # print("Published Date:", fetcher.get_published_date())
+    # print("Summary:", fetcher.get_summary())
+    # print("Content:", fetcher.get_content())

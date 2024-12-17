@@ -108,6 +108,12 @@ class PapersPipeline:
                     existing_paper.keywords = paper_data['keywords']
                     session.commit()
                     print(f"Updated keywords for paper: {existing_paper.title}")
+                
+
+                if not existing_paper.url and paper_data.get('url'):
+                    existing_paper.url = paper_data['url']
+                    session.commit()
+                    print(f"Updated url for paper: {existing_paper.title}")
 
                 # Update authors if they are empty or None
                 if not existing_paper.authors and paper_data.get('authors'):
@@ -115,6 +121,8 @@ class PapersPipeline:
                     session.commit()
                     print(f"Updated authors for paper: {existing_paper.title}")
                 return  # Skip saving the paper as it already exists
+
+
             else:
                 # Add new paper record
                 paper = Papers(
@@ -122,6 +130,7 @@ class PapersPipeline:
                     category=paper_data['category'],
                     pub_date=paper_data['published_date'],
                     authors=paper_data['authors'],
+                    url=paper_data['url'],
                     collection_name=paper_data['collection_name'],
                     keywords=paper_data.get('keywords', []),
                     is_processed=paper_data.get('is_processed', False)
@@ -169,6 +178,7 @@ class PapersPipeline:
                         "authors": fetcher.get_authors(),
                         "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
                         "keywords": keywords,
+                        "url": fetcher.get_links(),
                         "summary": fetcher.get_summary()
                     }
                 )
@@ -181,6 +191,7 @@ class PapersPipeline:
                     "category": category,
                     "authors": fetcher.get_authors(),
                     "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
+                    "url": fetcher.get_links(),
                     "keywords": keywords,
                     "collection_name": category,
                     "is_processed": True
