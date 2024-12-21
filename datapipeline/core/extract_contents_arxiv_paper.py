@@ -25,6 +25,7 @@ class ArxivPaperFetcher:
         documents = self.arxiv.load(self.title_query)
         if documents:
             self.document = documents[0]
+            # print("Document: ", self.document)
             # print("Metadata: ", self.document.metadata)
             print(f"Loaded document: {self.document.metadata.get('Title')}")
         else:
@@ -66,14 +67,14 @@ class ArxivPaperFetcher:
         """
         return self.document.page_content if self.document else None
 
-# Example usage:
+# # Example usage:
 # if __name__ == "__main__":
 #     paper_title = "Bit symmetry entails the symmetry of thequantum transition probability"
 #     fetcher = ArxivPaperFetcher(title_query=paper_title)
 #     fetcher.fetch_paper()
-#     print("Links:", fetcher.get_links())
-    # print("Title:", fetcher.get_title())
-    # print("Authors:", fetcher.get_authors())
-    # print("Published Date:", fetcher.get_published_date())
-    # print("Summary:", fetcher.get_summary())
-    # print("Content:", fetcher.get_content())
+#     # print("Links:", fetcher.get_links())
+#     # print("Title:", fetcher.get_title())
+#     # print("Authors:", fetcher.get_authors())
+#     # print("Published Date:", fetcher.get_published_date())
+#     # print("Summary:", fetcher.get_summary())
+#     print("Content:", fetcher.get_content())

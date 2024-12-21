@@ -5,7 +5,9 @@ from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
 from app.core.references_generator import ReferenceGenerator
-from app.core.intext_citation import InTextCitationProcessor
+from datapipeline.core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
+# from app.core.intext_citation import InTextCitationProcessor
+from app.core.spacy_semantic_citation import SemanticCitationInserter
 
 class PaperKeywordMatcher:
     def __init__(self):
@@ -96,10 +98,12 @@ if __name__ == "__main__":
     category = "quantum_physics"
     matching_titles = matcher.match_keywords(file_path, category)
 
+    relevant_papers = []
     if matching_titles:
         print("Matching Papers:")
         for title in matching_titles:
             print(f"- {title}")
+            relevant_papers.append(title)
 
         reference_generator = ReferenceGenerator(style="APA")
         references = reference_generator.generate_references(matching_titles, category)
@@ -107,11 +111,22 @@ if __name__ == "__main__":
         print("\nReferences:")
         for reference in references:
             print(f"- {reference}")
-        # try:
-        #     intext_citation = InTextCitationProcessor(style="APA")
-        #     modified_file_path = intext_citation.process_draft(file_path, matching_titles, category)
-        #     print(f"Modified draft saved to: {modified_file_path}")
-        # except Exception as e:
-        #     print(f"Error processing draft: {e}")
+        try:
+            inserter = SemanticCitationInserter(
+                mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
+                db_name=MONGO_DB_NAME,
+                collection_name=category,
+                relevant_papers=relevant_papers
+            )
+
+            input_doc = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc.docx"
+            output_doc = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc_with_citations.docx"
+
+            inserter.process_document(input_doc, output_doc)
+            # intext_citation = InTextCitationProcessor(style="APA")
+            # modified_file_path = intext_citation.process_draft(file_path, matching_titles, category)
+            # print(f"Modified draft saved to: {modified_file_path}")
+        except Exception as e:
+            print(f"Error processing draft: {e}")
     else:
         print("No matching papers found.")

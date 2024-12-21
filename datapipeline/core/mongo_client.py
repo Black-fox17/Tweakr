@@ -1,7 +1,8 @@
 import os
 from pymongo import MongoClient, UpdateOne
 from langchain_mongodb import MongoDBAtlasVectorSearch
-
+# from langchain_mongodb.vectorstores import MongoDBAtlasVectorSearch
+from typing import List
 from langchain.docstore.document import Document
 
 
@@ -10,7 +11,7 @@ from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
 from datapipeline.core.utils import embeddings
 
 class MongoDBVectorStoreManager:
-    def __init__(self, connection_string: str = MongoDBAtlasVectorSearch, db_name: str = MONGO_DB_NAME):
+    def __init__(self, connection_string: str = MONGODB_ATLAS_CLUSTER_URI, db_name: str = MONGO_DB_NAME):
         """
         Initializes the MongoDB connection.
 
@@ -55,13 +56,18 @@ class MongoDBVectorStoreManager:
         """
         collection = self.get_or_create_collection(collection_name)
         
-        vector_store = MongoDBAtlasVectorSearch(
-            collection=collection,
-            embedding=embeddings,
-            index_name=f"{collection_name}_index"
-        )
-        vector_store.add_documents([document])
-
+        try:
+            print("Storing document in vector store...")
+            vector_store = MongoDBAtlasVectorSearch(
+                collection=collection,
+                embedding=embeddings,
+                index_name=f"{collection_name}_index",
+                relevance_score_fn = "cosine" 
+            )
+            vector_store.add_documents([document])
+        except Exception as e:
+            print(f"Error storing document in vector store: {e}")
+            return
         print(f"Document '{document.metadata['title']}' stored successfully.")
 
     def update_documents(self, collection_name: str, updates: list[dict]):
@@ -145,3 +151,38 @@ class MongoDBVectorStoreManager:
         # Check if all required fields are present and not empty
         metadata = document.get("metadata", {})
         return not any(field not in metadata or not metadata[field] for field in required_fields)
+
+    def similarity_search_by_vector(self, collection_name: str, query_embedding: List[float], k: int = 3):
+        collection = self.get_or_create_collection(collection_name)
+        vector_store = MongoDBAtlasVectorSearch(
+            collection=collection,
+            embedding=embeddings,  # from your utils
+            index_name=f"{collection_name}_index"
+        )
+        return vector_store.similarity_search(query_embedding, k=k)
+        # return vector_store.as_retriever()
+
+    def get_retriever(self, collection_name: str, search_type: str = "similarity", k: int = 1):
+        """
+        Retrieve a retriever for the collection with specified search parameters.
+
+        Parameters:
+        - collection_name (str): Name of the collection.
+        - search_type (str): Type of search ("similarity", "mmr", "similarity_score_threshold").
+        - k (int): Number of documents to retrieve.
+
+        Returns:
+        - VectorStoreRetriever: The retriever object.
+        """
+        collection = self.get_or_create_collection(collection_name)
+        vector_store = MongoDBAtlasVectorSearch(
+            collection=collection,
+            embedding=embeddings,
+            index_name=f"{collection_name}_index",
+            relevance_score_fn="cosine",  # or use the appropriate function
+        )
+        retriever = vector_store.as_retriever(
+            search_type=search_type,
+            search_kwargs={"k": k}
+        )
+        return retriever

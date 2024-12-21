@@ -59,12 +59,7 @@ else
     fi
     
     # Download SpaCy model
-    echo "Downloading SpaCy 'en_core_web_sm' model..."
-    $PYTHON_CMD -m spacy download en_core_web_sm
-    
-    # # Run the application
-    # $PYTHON_CMD app/main.py
-    
-    # # Deactivate the virtual environment
-    # deactivate
+    echo "Downloading nlkt punkt model..."
+    $PYTHON_CMD -m nltk.downloader punkt
+
 fi
