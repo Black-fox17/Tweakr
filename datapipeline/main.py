@@ -199,6 +199,9 @@ class PapersPipeline:
                     self.mongo_manager.store_document(collection_name=category, document=document)
                     print(f"Document stored in MongoDB collection '{category}'.")
 
+                # Create the indexes for search and vector search
+                self.mongo_manager.create_indexes(collection_name=category)
+
                 # Save paper metadata to SQL database
                 paper_data = {
                     "title": fetcher.get_title(),
@@ -219,4 +222,4 @@ class PapersPipeline:
 # Example Usage
 if __name__ == "__main__":
     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
-    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=1, download_dir='./store')
+    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=20, download_dir='./store')

@@ -7,7 +7,7 @@ import spacy
 import numpy as np
 from pymongo import MongoClient
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from datapipeline.core.mongo_client import MongoDBVectorStoreManager, MongoDBAtlasVectorSearch
+from datapipeline.core.mongo_client import MongoDBVectorStoreManager, Document, MongoDBAtlasVectorSearch
 from datapipeline.models.papers import Papers
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.core.utils import embeddings
@@ -30,6 +30,7 @@ class SemanticCitationInserter:
         self, 
         mongo_uri: str, 
         db_name: str, 
+        relevant_papers: List,
         collection_name: str,
         threshold: float = 0.75, 
         top_k: int = 3,
@@ -49,7 +50,6 @@ class SemanticCitationInserter:
         # Initialize headings of various sections
         # TODO: in future work on an implementation that identifies them correctly.
         self.headers = headers
-
 
     def is_heading(self, sentence: str) -> bool:
         """
@@ -107,66 +107,13 @@ class SemanticCitationInserter:
             paper for paper in collection.find({"metadata.title": {"$in": self.relevant_papers}})
         ]
         vector_store.add_documents([
-            LangChainDocument(
+            Document(
                 page_content=doc.get("content", ""),
                 metadata=doc.get("metadata", {})
             )
             for doc in filtered_collection
         ])
         return vector_store
-    
-
-    # def process_document(self, input_doc_path: str, output_doc_path: str):
-    #     logging.info(f"Processing document: {input_doc_path}")
-    #     doc = Document(input_doc_path)
-
-    #     for paragraph_index, para in enumerate(doc.paragraphs, start=1):
-    #         if not para.text.strip():
-    #             continue
-
-    #         logging.info(f"Processing paragraph {paragraph_index}.")
-    #         sentences = list(nlp(para.text).sents)
-    #         new_para_text = ""
-
-    #         for sentence_index, sent in enumerate(sentences, start=1):
-    #             sentence_text = sent.text.strip()
-    #             if not sentence_text:
-    #                 continue
-
-    #             # Check if the sentence is a standalone heading
-    #             if self.is_heading(sentence_text):
-    #                 logging.info(f"Skipping heading: {sentence_text}")
-    #                 new_para_text += f" {sentence_text}"  # Preserve headings in the output
-    #                 continue
-
-    #             logging.info(f"Processing sentence {sentence_index}: {sentence_text}")
-    #             relevant_papers = self.find_relevant_papers(sentence_text)
-
-    #             if relevant_papers:
-    #                 citation_texts = []
-
-    #                 for paper_doc in relevant_papers:
-    #                     paper_metadata = paper_doc.metadata
-    #                     title = paper_metadata.get("title")
-
-    #                     if title:
-    #                         full_text = self.retrieve_full_text(paper_metadata)
-    #                         if full_text:
-    #                             citation_texts.append(f"({title})")
-
-    #                 if citation_texts:
-    #                     combined_citation = " ".join(citation_texts)
-    #                     sentence_text += f" {combined_citation}"
-
-    #             if new_para_text:
-    #                 new_para_text += " " + sentence_text
-    #             else:
-    #                 new_para_text = sentence_text
-
-    #         para.text = new_para_text
-
-    #     doc.save(output_doc_path)
-    #     logging.info(f"Document saved with in-text citations: {output_doc_path}")
 
 
     def process_document(self, input_doc_path: str, output_doc_path: str):

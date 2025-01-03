@@ -6,7 +6,7 @@ from datapipeline.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
 from app.core.references_generator import ReferenceGenerator
 from datapipeline.core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
-# from app.core.intext_citation import InTextCitationProcessor
+from app.core.intext_citation import InTextCitationProcessor
 from app.core.spacy_semantic_citation import SemanticCitationInserter
 
 class PaperKeywordMatcher:
@@ -95,6 +95,7 @@ class PaperKeywordMatcher:
 if __name__ == "__main__":
     matcher = PaperKeywordMatcher()
     file_path = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc.docx"
+    output_doc = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc_with_citations.docx"
     category = "quantum_physics"
     matching_titles = matcher.match_keywords(file_path, category)
 
@@ -112,20 +113,9 @@ if __name__ == "__main__":
         for reference in references:
             print(f"- {reference}")
         try:
-            inserter = SemanticCitationInserter(
-                mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
-                db_name=MONGO_DB_NAME,
-                collection_name=category,
-                relevant_papers=relevant_papers
-            )
-
-            input_doc = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc.docx"
-            output_doc = "/Users/naija/Documents/gigs/tweakr/tweakr-mvp/test_docs/testdoc_with_citations.docx"
-
-            inserter.process_document(input_doc, output_doc)
-            # intext_citation = InTextCitationProcessor(style="APA")
-            # modified_file_path = intext_citation.process_draft(file_path, matching_titles, category)
-            # print(f"Modified draft saved to: {modified_file_path}")
+            intext_citation = InTextCitationProcessor(style="APA", collection_name="quantum_physics")
+            modified_file_path = intext_citation.process_sentences(file_path, output_doc)
+            print(f"Modified draft saved to: {modified_file_path}")
         except Exception as e:
             print(f"Error processing draft: {e}")
     else:

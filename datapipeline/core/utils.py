@@ -4,4 +4,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 # Swapped the embedding for google's embeddings
 # embeddings = OpenAIEmbeddings()
-embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+embeddings_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+
+def embeddings(query):
+    embedding_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    return embedding_model.embed_query(query)
