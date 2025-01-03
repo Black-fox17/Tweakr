@@ -4,6 +4,7 @@ from pymongo import MongoClient, UpdateOne
 from pymongo.operations import SearchIndexModel
 from langchain_mongodb import MongoDBAtlasVectorSearch
 # from langchain_mongodb.vectorstores import MongoDBAtlasVectorSearch
+from langchain_mongodb.retrievers.hybrid_search import MongoDBAtlasHybridSearchRetriever
 from typing import List
 from langchain.docstore.document import Document
 
@@ -66,7 +67,6 @@ class MongoDBVectorStoreManager:
             vector_store = MongoDBAtlasVectorSearch(
                 collection=collection,
                 embedding=embeddings_model,
-                index_name=vector_index_name,
                 relevance_score_fn="cosine"
             )
             vector_store.add_documents([document])
@@ -124,29 +124,6 @@ class MongoDBVectorStoreManager:
         except Exception as e:
             logging.warning(f"Vector search index '{vector_index_name}' already exists or could not be created: {e}")
 
-    # def store_document(self, collection_name: str, document: Document):
-    #     """
-    #     Stores a document in the specified collection with vector embeddings.
-
-    #     Parameters:
-    #     - collection_name (str): Name of the collection.
-    #     - document (Document): The document to store.
-    #     """
-    #     collection = self.get_or_create_collection(collection_name)
-        
-    #     try:
-    #         print("Storing document in vector store...")
-    #         vector_store = MongoDBAtlasVectorSearch(
-    #             collection=collection,
-    #             embedding=embeddings,
-    #             index_name=f"{collection_name}_index",
-    #             relevance_score_fn = "cosine" 
-    #         )
-    #         vector_store.add_documents([document])
-    #     except Exception as e:
-    #         print(f"Error storing document in vector store: {e}")
-    #         return
-    #     print(f"Document '{document.metadata['title']}' stored successfully.")
 
     def update_documents(self, collection_name: str, updates: list[dict]):
         """
@@ -235,46 +212,48 @@ class MongoDBVectorStoreManager:
         return embeddings(query)
 
     
-    def semantic_search(self, collection_name: str, query_text: str, top_k: int = 10) -> List[dict]:
+
+    def semantic_search(self, collection_name: str, query_text: str, top_k: int = 1, fulltext_penalty: float = 60.0, vector_penalty: float = 60.0):
         """
-        Performs a semantic search using the vector search index.
+        Performs a semantic search using MongoDB Atlas Hybrid Search Retriever.
 
         Parameters:
-        - collection_name (str): Name of the collection.
-        - query_text (str): The textual query to search.
-        - top_k (int): The number of top results to return.
+        - collection_name: The collection name.
+        - search_index_name (str): Name of the Atlas Search index.
+        - query_text (str): The search query_text.
+        - top_k (int): Number of top documents to return. Default is 5.
+        - fulltext_penalty (float): Penalty for full-text search. Default is 60.0.
+        - vector_penalty (float): Penalty for vector search. Default is 60.0.
 
         Returns:
-        - List[dict]: A list of documents sorted by relevance.
+        - List[dict]: A list of retrieved documents.
         """
-        collection = self.get_or_create_collection(collection_name)
-
         try:
-            logging.info("Generating query vector...")
-            query_vector = self.generate_query_embedding(query_text)
+            collection = self.get_or_create_collection(collection_name)
+            vector_store = MongoDBAtlasVectorSearch(
+                collection=collection,
+                embedding=embeddings_model,
+                relevance_score_fn="cosine"
+            )
 
-            logging.info("Performing semantic search...")
-            pipeline = [
-                {
-                    "$search": {
-                        "knnBeta": {
-                            "path": "text",
-                            "vector": query_vector,
-                            "k": top_k
-                        }
-                    }
-                },
-                {
-                    "$project": {
-                        "metadata": 1,
-                        "score": {"$meta": "searchScore"}
-                    }
-                }
-            ]
+            logging.info("Initializing MongoDB Atlas Hybrid Search Retriever...")
+            search_index_name = f"{collection_name}_search_index"
+            retriever = MongoDBAtlasHybridSearchRetriever(
+                vectorstore=vector_store,
+                search_index_name=search_index_name,
+                top_k=top_k,
+                fulltext_penalty=fulltext_penalty,
+                vector_penalty=vector_penalty
+            )
 
-            results = list(collection.aggregate(pipeline))
-            logging.info(f"Semantic search returned {len(results)} results.")
-            return results
+            logging.info(f"Performing hybrid search with query_text: {query_text}")
+            documents = retriever.invoke(query_text)
+            logging.info(f"Retrieved {len(documents)} documents.")
+
+            for doc in documents:
+                logging.info(f"Document: {doc}")
+
+            return documents
 
         except Exception as e:
             logging.error(f"Error during semantic search: {e}")
@@ -282,58 +261,13 @@ class MongoDBVectorStoreManager:
 
 
 
-    # def create_vector_index(self, collection_name: str, vector_dimensions: int):
-    #     collection = self.get_or_create_collection(collection_name)
-    #     try:
-    #         collection.create_index(
-    #             [
-    #                 ("vector", "cosine")  # Specify the similarity metric
-    #             ],
-    #             name=f"{collection_name}_index",
-    #             dimensions=vector_dimensions
-    #         )
-    #         print(f"Vector index created for collection '{collection_name}'.")
-    #     except Exception as e:
-    #         print(f"Error creating vector index: {e}")
-
-
-    # def semantic_search(self, collection_name: str, query: str, top_k: int = 5):
-    #     """
-    #     Performs semantic search on the vector store.
-
-    #     Parameters:
-    #     - collection_name (str): Name of the MongoDB collection.
-    #     - query (str): The query for which to perform semantic search.
-    #     - top_k (int): Number of top results to return.
-
-    #     Returns:
-    #     - List of documents matching the query.
-    #     """
-
-    #     # Perform vector search
-    #     try:
-    #         vector_store = MongoDBAtlasVectorSearch(
-    #             collection=collection_name,
-    #             embedding=embeddings,
-    #             index_name=f"{collection_name}_index",
-    #             relevance_score_fn="cosine",  # or use the appropriate function
-    #         )
-    #         print()
-    #         results = vector_store.similarity_search_by_vector(self.generate_query_embedding(query), k=top_k)
-    #         print(f"Semantic search results for query '{query}': {results}")
-    #         return results
-    #     except Exception as e:
-    #         print(f"Error performing semantic search: {e}")
-    #         return []
-
-
-
+            
 if __name__ == "__main__":
     mongo = MongoDBVectorStoreManager()
     try:
         results = mongo.semantic_search(
             "quantum_physics",
-            query="Advances in modern physics and technology have spurred great interest in the study of symmetry and topology in condensed matter physics", 
+            query_text="Advances in modern physics and technology have spurred great interest in the study of symmetry and topology in condensed matter physics", 
             top_k=3
         )
         for r in results:

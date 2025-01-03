@@ -5,6 +5,7 @@ headers = [
     "Experimental Progress",
     "Implications for Quantum Supremacy",
     "Methods",
+    "Theoretical Foundations",
     "Challenges and Future Directions",
     "Challenges",
     "Results",
