@@ -7,7 +7,6 @@ from datapipeline.models.papers import Papers
 from app.core.references_generator import ReferenceGenerator
 from datapipeline.core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
 from app.core.intext_citation import InTextCitationProcessor
-from app.core.spacy_semantic_citation import SemanticCitationInserter
 
 class PaperKeywordMatcher:
     def __init__(self):
