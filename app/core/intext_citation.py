@@ -44,9 +44,32 @@ class InTextCitationProcessor:
         self.threshold = threshold
         self.top_k = top_k
         self.headers = headers  # Load predefined headings
+        self.matched_paper_titles = []  # Store matched paper titles
 
         # Load SpaCy model for sentence segmentation
         self.nlp = spacy.load("en_core_web_sm")
+
+
+    def add_references_section(self, doc: Document, category: str):
+        """
+        Generate and append a references section to the document.
+
+        Parameters:
+        - doc (Document): The document to modify.
+        - category (str): Category of the papers.
+        """
+        if not self.matched_paper_titles:
+            logging.info("No matched papers to add to the references section.")
+            return
+
+        references = self.reference_generator.generate_references(self.matched_paper_titles, category)
+        if references:
+            # Add a heading for the references section
+            doc.add_paragraph("References")
+
+            # Add each reference as a new paragraph
+            for ref in references:
+                doc.add_paragraph(ref)
 
     def fetch_metadata_from_db(self, title: str) -> Dict:
         """
@@ -187,7 +210,12 @@ class InTextCitationProcessor:
 
     def process_sentences(self, input_path: str, output_path: str):
         """
-        Process each sentence in the document for in-text citations.
+        Process each sentence in the document for in-text citations and add references.
+
+        Parameters:
+        - input_path (str): Path to the input document.
+        - output_path (str): Path to save the output document.
+        - category (str): Category of the papers for generating references.
         """
         logging.info(f"Starting sentence-level processing for file: '{input_path}'")
 
@@ -235,6 +263,9 @@ class InTextCitationProcessor:
                     for paper_doc in relevant_papers:
                         metadata = paper_doc.metadata
                         title = metadata.get("title")
+                        if title and title not in self.matched_paper_titles:
+                            self.matched_paper_titles.append(title)
+
                         if not title:
                             logging.error("Missing 'title' in paper metadata. Skipping this paper.")
                             continue
@@ -267,6 +298,9 @@ class InTextCitationProcessor:
         # Save updated content back to the document
         for idx, updated_text in enumerate(updated_paragraphs):
             doc.paragraphs[idx].text = updated_text
+
+        # Add the references section
+        self.add_references_section(doc, self.collection_name)
 
         doc.save(output_path)
         logging.info(f"Processed document saved at: '{output_path}'")

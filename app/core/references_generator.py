@@ -62,7 +62,7 @@ class ReferenceGenerator:
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "APA")
-        return f"""{formatted_authors} ({publication_year}). "{title}". {paper.category}."""
+        return f"""{formatted_authors} ({publication_year}). "{title}"."""
 
     def generate_mla_reference(self, paper, authors: list) -> str:
         """
@@ -73,7 +73,7 @@ class ReferenceGenerator:
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "MLA")
-        return f"""{formatted_authors}. "{title}." {paper.category}, {publication_year}."""
+        return f"""{formatted_authors}. "{title}.", {publication_year}."""
 
 
     def generate_chicago_reference(self, paper, authors: list) -> str:
@@ -85,7 +85,7 @@ class ReferenceGenerator:
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
 
         formatted_authors = self.format_author_list(authors, "Chicago")
-        return f"""{formatted_authors}. "{title}". {paper.category}, {publication_year}."""
+        return f"""{formatted_authors}. "{title}"., {publication_year}."""
 
     def generate_references(self, matching_titles: list, category: str) -> list:
         """

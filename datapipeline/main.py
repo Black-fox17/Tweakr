@@ -153,10 +153,10 @@ class PapersPipeline:
         downloader = ArxivPaperDownloader(query=query, max_results=max_results, download_dir=download_dir)
         downloaded_papers = downloader.download_papers()
 
-        # Define required fields for completeness check
+        # Define required fields for completeness check.
         required_fields = ["title", "authors", "published_date", "keywords", "url", "summary", "content"]
 
-        # updates = []
+        # updates = [].
         # TODO: implement bulk update of metadata
         for paper in downloaded_papers:
             print(f"Processing paper: {paper['title']}")
@@ -222,4 +222,4 @@ class PapersPipeline:
 # Example Usage
 if __name__ == "__main__":
     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
-    pipeline.process_papers(query="quantum", category="quantum_physics", max_results=20, download_dir='./store')
+    pipeline.process_papers(query="physics", category="physics", max_results=30, download_dir='./store')
