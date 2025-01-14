@@ -6,11 +6,11 @@ from typing import List, Dict
 from datetime import datetime, date
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.models.papers import Papers
-from app.core.references_generator import ReferenceGenerator
+from core.references_generator import ReferenceGenerator
 from datapipeline.core.mongo_client import MongoDBVectorStoreManager
 from datapipeline.core.utils import embeddings 
 from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
-from app.core.headings import headers  # Import the headings
+from core.headings import headers  # Import the headings
 import spacy
 import logging
 
