@@ -75,54 +75,112 @@ class MongoDBVectorStoreManager:
             logging.error(f"Error storing document in vector store: {e}")
 
     
+    # def create_indexes(self, collection_name: str):
+    #     """
+    #     Creates the required indexes for the MongoDB collection.
+
+    #     Parameters:
+    #     - collection_name (str): Name of the collection.
+    #     """
+    #     collection = self.get_or_create_collection(collection_name)
+    #     # Create Atlas Search Index
+    #     search_index_name = f"{collection_name}_search_index"
+    #     try:
+    #         logging.info(f"Creating search index '{search_index_name}'...")
+    #         search_index_model = SearchIndexModel(
+    #             definition ={
+    #                 "mappings": {
+    #                     "dynamic": True
+    #                 }
+    #             },
+    #             name=search_index_name,
+    #         )
+    #         collection.create_search_index(model=search_index_model)
+    #         logging.info(f"Search index '{search_index_name}' created successfully.")
+    #     except Exception as e:
+    #         logging.warning(f"Search index '{search_index_name}' already exists or could not be created: {e}")
+
+    #     # Create Vector Search Index
+    #     vector_index_name = f"{collection_name}_vector_index"
+    #     try:
+    #         logging.info(f"Creating vector search index '{vector_index_name}'...")
+            
+    #         vector_search_index_model = SearchIndexModel(
+    #             definition = {
+    #                 "fields": [
+    #                     {
+    #                         "type": "vector",
+    #                         "numDimensions": 768,
+    #                         "path": "text",
+    #                         "similarity":  "cosine"
+    #                     },
+    #                 ]
+    #             },
+    #             name=vector_index_name,
+    #             type="vectorSearch",
+    #         )
+    #         collection.create_search_index(model=vector_search_index_model)
+    #         logging.info(f"Vector search index '{vector_index_name}' created successfully.")
+    #     except Exception as e:
+    #         logging.warning(f"Vector search index '{vector_index_name}' already exists or could not be created: {e}")
+
     def create_indexes(self, collection_name: str):
         """
-        Creates the required indexes for the MongoDB collection.
+        Creates the required indexes for the MongoDB collection if they don't already exist.
 
         Parameters:
         - collection_name (str): Name of the collection.
         """
         collection = self.get_or_create_collection(collection_name)
+
+        # Check existing indexes
+        existing_indexes = [index["name"] for index in collection.list_indexes()]
+
         # Create Atlas Search Index
         search_index_name = f"{collection_name}_search_index"
-        try:
-            logging.info(f"Creating search index '{search_index_name}'...")
-            search_index_model = SearchIndexModel(
-                definition ={
-                    "mappings": {
-                        "dynamic": True
-                    }
-                },
-                name=search_index_name,
-            )
-            collection.create_search_index(model=search_index_model)
-            logging.info(f"Search index '{search_index_name}' created successfully.")
-        except Exception as e:
-            logging.warning(f"Search index '{search_index_name}' already exists or could not be created: {e}")
+        if search_index_name not in existing_indexes:
+            try:
+                logging.info(f"Creating search index '{search_index_name}'...")
+                search_index_model = SearchIndexModel(
+                    definition={
+                        "mappings": {
+                            "dynamic": True
+                        }
+                    },
+                    name=search_index_name,
+                )
+                collection.create_search_index(model=search_index_model)
+                logging.info(f"Search index '{search_index_name}' created successfully.")
+            except Exception as e:
+                logging.warning(f"Could not create search index '{search_index_name}': {e}")
+        else:
+            logging.info(f"Search index '{search_index_name}' already exists. Skipping creation.")
 
         # Create Vector Search Index
         vector_index_name = f"{collection_name}_vector_index"
-        try:
-            logging.info(f"Creating vector search index '{vector_index_name}'...")
-            
-            vector_search_index_model = SearchIndexModel(
-                definition = {
-                    "fields": [
-                        {
-                            "type": "vector",
-                            "numDimensions": 768,
-                            "path": "text",
-                            "similarity":  "cosine"
-                        },
-                    ]
-                },
-                name=vector_index_name,
-                type="vectorSearch",
-            )
-            collection.create_search_index(model=vector_search_index_model)
-            logging.info(f"Vector search index '{vector_index_name}' created successfully.")
-        except Exception as e:
-            logging.warning(f"Vector search index '{vector_index_name}' already exists or could not be created: {e}")
+        if vector_index_name not in existing_indexes:
+            try:
+                logging.info(f"Creating vector search index '{vector_index_name}'...")
+                vector_search_index_model = SearchIndexModel(
+                    definition={
+                        "fields": [
+                            {
+                                "type": "vector",
+                                "numDimensions": 768,
+                                "path": "text",
+                                "similarity": "cosine"
+                            },
+                        ]
+                    },
+                    name=vector_index_name,
+                    type="vectorSearch",
+                )
+                collection.create_search_index(model=vector_search_index_model)
+                logging.info(f"Vector search index '{vector_index_name}' created successfully.")
+            except Exception as e:
+                logging.warning(f"Could not create vector search index '{vector_index_name}': {e}")
+        else:
+            logging.info(f"Vector search index '{vector_index_name}' already exists. Skipping creation.")
 
 
     def update_documents(self, collection_name: str, updates: list[dict]):
