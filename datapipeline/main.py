@@ -1,3 +1,4 @@
+import os
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
@@ -91,6 +92,26 @@ class PapersPipeline:
             return []
 
 
+    def clean_download_directory(self, download_dir: str):
+            """
+            Empties the specified directory to prepare it for the next batch of downloads.
+
+            Parameters:
+            - download_dir (str): The directory to clean.
+            """
+            if os.path.exists(download_dir):
+                for filename in os.listdir(download_dir):
+                    file_path = os.path.join(download_dir, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                    except Exception as e:
+                        print(f"Failed to delete {file_path}. Reason: {e}")
+            else:
+                os.makedirs(download_dir)
+
 
     def save_paper_metadata(self, session: Session, paper_data: dict):
         """
@@ -146,80 +167,128 @@ class PapersPipeline:
             print(f"An error occurred while saving paper metadata: {e}")
 
 
-    def process_papers(self, query: str, category: str, max_results: int = 20, download_dir: str = './store'):
+    def process_papers(self, query: str, category: str, download_dir: str = './store', batch_size: int = 100):
         """
-        Process papers by downloading, fetching their contents, and storing them in the database and MongoDB.
+        Process papers in batches by downloading, fetching their contents, and storing them in the database and MongoDB.
+
+        Parameters:
+        - query (str): The search term to query arXiv.
+        - category (str): The category to use for storage and processing.
+        - download_dir (str): Directory to store downloaded papers.
+        - batch_size (int): Number of papers to fetch and process per batch.
         """
-        downloader = ArxivPaperDownloader(query=query, max_results=max_results, download_dir=download_dir)
-        downloaded_papers = downloader.download_papers()
+        offset = 0  # Start offset for pagination
+        while True:
+            # Clean the download directory before starting the batch
+            self.clean_download_directory(download_dir)
 
-        # Define required fields for completeness check.
-        required_fields = ["title", "authors", "published_date", "keywords", "url", "summary", "content"]
+            # Initialize the downloader with the current batch
+            downloader = ArxivPaperDownloader(query=query, max_results=batch_size, download_dir=download_dir)
+            downloaded_papers = downloader.download_papers()
 
-        # updates = [].
-        # TODO: implement bulk update of metadata
-        for paper in downloaded_papers:
-            print(f"Processing paper: {paper['title']}")
+            # Stop if no papers were downloaded (end of available results)
+            if not downloaded_papers:
+                print("No more papers to download. Processing completed.")
+                break
 
-            # Check if the paper already exists and is complete in MongoDB
-            if self.mongo_manager.is_document_complete(collection_name=category, title=paper['title'], required_fields=required_fields):
-                print(f"Paper '{paper['title']}' already exists and is complete in MongoDB. Skipping.")
-                continue
+            # Define required fields for completeness check.
+            required_fields = ["title", "authors", "published_date", "keywords", "url", "summary", "content"]
 
-            # Fetch paper content
-            fetcher = ArxivPaperFetcher(title_query=paper['title'])
-            fetcher.fetch_paper()
-            content = fetcher.get_content()
-            # print("Content: ", content)
+            for paper in downloaded_papers:
+                print(f"Processing paper: {paper['title']}")
 
-            if content:
-                # Extract keywords
-                keywords = self.extract_keywords(content)
+                # Check if the paper already exists and is complete in MongoDB
+                if self.mongo_manager.is_document_complete(
+                    collection_name=category,
+                    title=paper['title'],
+                    required_fields=required_fields
+                ):
+                    print(f"Paper '{paper['title']}' already exists and is complete in MongoDB. Skipping.")
+                    continue
 
-                # Store content in MongoDB vector store
-                document = Document(
-                    page_content=content,
-                    metadata={
+                # Fetch paper content
+                fetcher = ArxivPaperFetcher(title_query=paper['title'])
+                fetcher.fetch_paper()
+                content = fetcher.get_content()
+
+                if content:
+                    # Extract keywords
+                    keywords = self.extract_keywords(content)
+
+                    # Store content in MongoDB vector store
+                    document = Document(
+                        page_content=content,
+                        metadata={
+                            "title": fetcher.get_title(),
+                            "authors": fetcher.get_authors(),
+                            "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
+                            "keywords": keywords,
+                            "url": fetcher.get_links(),
+                            "summary": fetcher.get_summary(),
+                            "content": content
+                        }
+                    )
+                    if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
+                        print(f"Paper '{paper['title']}' already exists in MongoDB. Updating metadata...")
+                        self.mongo_manager.single_update_document(
+                            collection_name=category, title=paper['title'], updated_metadata=document.metadata
+                        )
+                    else:
+                        print(f"Paper '{paper['title']}' does not exist in MongoDB. Storing new document...")
+                        self.mongo_manager.store_document(collection_name=category, document=document)
+                        print(f"Document stored in MongoDB collection '{category}'.")
+
+                    # Create the indexes for search and vector search
+                    self.mongo_manager.create_indexes(collection_name=category)
+
+                    # Save paper metadata to SQL database
+                    paper_data = {
                         "title": fetcher.get_title(),
+                        "category": category,
                         "authors": fetcher.get_authors(),
                         "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-                        "keywords": keywords,
                         "url": fetcher.get_links(),
-                        "summary": fetcher.get_summary(),
-                        "content": content
+                        "keywords": keywords,
+                        "collection_name": category,
+                        "is_processed": True
                     }
-                )
-                if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
-                    print(f"Paper '{paper['title']}' already exists in MongoDB. Updating metadata...")
-                    # TODO: implement bulk update of metadata
-                    # updates.append({"title": paper['title'], "updated_metadata": metadata})
-                    self.mongo_manager.single_update_document(collection_name=category, title=paper['title'], updated_metadata=updated_metadata)
+
+                    with get_session_with_ctx_manager() as session:
+                        self.save_paper_metadata(session, paper_data)
                 else:
-                    print(f"Paper '{paper['title']}' does not exist in MongoDB. Storing new document...")
-                    self.mongo_manager.store_document(collection_name=category, document=document)
-                    print(f"Document stored in MongoDB collection '{category}'.")
+                    print(f"No content found for paper: {paper['title']}")
 
-                # Create the indexes for search and vector search
-                self.mongo_manager.create_indexes(collection_name=category)
+            # Increment the offset for the next batch
+            offset += batch_size
 
-                # Save paper metadata to SQL database
-                paper_data = {
-                    "title": fetcher.get_title(),
-                    "category": category,
-                    "authors": fetcher.get_authors(),
-                    "published_date": datetime.strptime(fetcher.get_published_date(), "%Y-%m-%d"),
-                    "url": fetcher.get_links(),
-                    "keywords": keywords,
-                    "collection_name": category,
-                    "is_processed": True
-                }
 
-                with get_session_with_ctx_manager() as session:
-                    self.save_paper_metadata(session, paper_data)
-            else:
-                print(f"No content found for paper: {paper['title']}")
+# # Example Usage
+# if __name__ == "__main__":
+#     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
+#     pipeline.process_papers(query="physics", category="physics", download_dir='./store')
 
-# Example Usage
+
 if __name__ == "__main__":
+    # List of categories to process
+    arxiv_categories = {
+        "physics": "Physics",
+        "math": "Mathematics",
+        "cs": "Computer Science",
+        "eess": "Electrical Engineering and Systems Science",
+        "econ": "Economics",
+        "q-bio": "Quantitative Biology",
+        "q-fin": "Quantitative Finance",
+        "stat": "Statistics"
+    }
+
+
+    # Create an instance of PapersPipeline
     pipeline = PapersPipeline(mongo_uri=MONGODB_ATLAS_CLUSTER_URI, mongo_db_name=MONGO_DB_NAME)
-    pipeline.process_papers(query="physics", category="physics", max_results=40, download_dir='./store')
+
+    # Process papers for each category
+    for key, full_name in arxiv_categories.items():
+        print(f"\nProcessing category: {full_name} ({key})")
+        try:
+            pipeline.process_papers(query=key, category=full_name, download_dir='./store')
+        except Exception as e:
+            print(f"Error processing category {full_name} ({key}): {e}")

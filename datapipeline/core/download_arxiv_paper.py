@@ -1,7 +1,9 @@
 import os
 import arxiv
 import re
+import time
 from arxiv import Client, Search, SortCriterion
+
 
 class ArxivPaperDownloader:
     def __init__(self, query, max_results: int, download_dir='./store'):
@@ -43,33 +45,58 @@ class ArxivPaperDownloader:
         Returns:
         - list: A list of dictionaries containing details of downloaded papers.
         """
-        # Create a search object with the specified query and parameters
-        search = Search(
-            query=self.query,
-            max_results=self.max_results,
-            sort_by=SortCriterion.SubmittedDate
-        )
-
         downloaded_papers = []  # List to store metadata of the downloaded papers
-        # Iterate over the search results
-        for result in self.client.results(search):
-            print(f"Downloading: {result.title}")
-            # Sanitize the title to create a valid filename
-            sanitized_title = self.sanitize_filename(result.title)
-            filename = f"{sanitized_title}.pdf"
-            filepath = os.path.join(self.download_dir, filename)
-            # Download the PDF to the specified directory with the sanitized filename
-            result.download_pdf(dirpath=self.download_dir, filename=filename)
-            # Append paper metadata and file path to the list
-            downloaded_papers.append({
-                'title': result.title,
-                'authors': [author.name for author in result.authors],
-                'published_date': result.published,
-                'pdf_path': filepath
-            })
+        page_size = 100  # Maximum results per API request
+        offset = 0  # Offset for pagination
+        delay = 3  # Delay between API requests to comply with rate limits
+
+        while True:
+            # Create a search object for the current batch
+            search = Search(
+                query=self.query,
+                max_results=page_size,
+                sort_by=SortCriterion.SubmittedDate,
+            )
+            search.offset = offset
+
+            # Fetch results for the current batch
+            results = list(self.client.results(search))
+
+            # If no more results, exit the loop
+            if not results:
+                break
+
+            # Process each result
+            for result in results:
+                print(f"Downloading: {result.title}")
+                # Sanitize the title to create a valid filename
+                sanitized_title = self.sanitize_filename(result.title)
+                filename = f"{sanitized_title}.pdf"
+                filepath = os.path.join(self.download_dir, filename)
+                # Download the PDF to the specified directory with the sanitized filename
+                result.download_pdf(dirpath=self.download_dir, filename=filename)
+                # Append paper metadata and file path to the list
+                downloaded_papers.append({
+                    'title': result.title,
+                    'authors': [author.name for author in result.authors],
+                    'published_date': result.published,
+                    'pdf_path': filepath
+                })
+
+            # Increment the offset for the next batch
+            offset += page_size
+
+            # Check if the maximum results limit is reached
+            if self.max_results and len(downloaded_papers) >= self.max_results:
+                downloaded_papers = downloaded_papers[:self.max_results]
+                break
+
+            # Respect the API's rate limits
+            time.sleep(delay)
 
         print(f"Downloaded {len(downloaded_papers)} papers.")
         return downloaded_papers
+
 
 # Example usage:
 # if __name__ == "__main__":
