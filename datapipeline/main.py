@@ -167,7 +167,7 @@ class PapersPipeline:
             print(f"An error occurred while saving paper metadata: {e}")
 
 
-    def process_papers(self, query: str, category: str,  batch_size: int, download_dir: str = './store'):
+    def process_papers(self, query: str, category: str,  batch_size: int=100, download_dir: str = './store'):
         """
         Process papers in batches by downloading, fetching their contents, and storing them in the database and MongoDB.
 
@@ -289,6 +289,6 @@ if __name__ == "__main__":
     for key, full_name in arxiv_categories.items():
         print(f"\nProcessing category: {full_name} ({key})")
         try:
-            pipeline.process_papers(query=key, category=str(full_name.lower()), download_dir='./store', batch_size=2)
+            pipeline.process_papers(query=key, category=str(full_name.lower()), download_dir='./store')
         except Exception as e:
             print(f"Error processing category {full_name} ({key}): {e}")

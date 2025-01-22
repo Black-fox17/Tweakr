@@ -14,5 +14,5 @@ export PYTHONPATH="$APP_DIR:$DATAPIPELINE_DIR:$APPSEC_DIR:$PYTHONPATH"
 # Print the PYTHONPATH for debugging
 echo "PYTHONPATH set to: $PYTHONPATH"
 
-# Optionally, run Streamlit with the dynamically set PYTHONPATH
-streamlit run "$APP_DIR/app/app.py"
+# Start streamlit server
+exec "$@"
