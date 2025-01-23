@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y gcc libpq-dev
 # Install the package dependencies in the generated requirements.txt file.
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
+
+# Install spaCy model
+RUN python -m spacy download en_core_web_sm
+
 COPY ./alembic /code/alembic
 COPY ./alembic.ini /code
 COPY ./app /code/app
