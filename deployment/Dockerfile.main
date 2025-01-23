@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 COPY ./alembic /code/alembic
 COPY ./alembic.ini /code
 COPY ./app /code/app
+COPY ./datapipeline /code/datapipeline
 COPY ./scripts /code/scripts
 # COPY ./.env /code/.env
 
