@@ -26,6 +26,8 @@ nltk = "^3.9.1"
 pydantic = "^2.10.4"
 pyarrow = "^18.1.0"
 streamlit = "^1.41.1"
+fastapi = "^0.115.8"
+uvicorn = "^0.34.0"
 
 
 [build-system]
