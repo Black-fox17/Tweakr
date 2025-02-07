@@ -11,6 +11,7 @@ from scalar_fastapi import get_scalar_api_reference
 
 from app.monitoring.services import request_attributes_mapper, monitoring
 from app.auth.routes import router as auth_router
+from app.references.routes import router as references_router
 
 
 def custom_openapi():
@@ -70,6 +71,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
+app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
+
 
 if __name__ == "__main__":
     import uvicorn
