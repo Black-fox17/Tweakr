@@ -56,7 +56,7 @@ def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
     openapi_schema = get_openapi(
-        title="PoeAI | Main",
+        title="Tweakr | Main",
         version="1.0.0",
         description="Create your dream podcasts",
         routes=app.routes,

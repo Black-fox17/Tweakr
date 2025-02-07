@@ -1,3 +1,4 @@
+# TODO: new dev change the background image for the otp template
 def email_otp_template(otp_code, expiration_minutes):
     html_content = f"""
     <!DOCTYPE html>
@@ -87,7 +88,7 @@ def email_otp_template(otp_code, expiration_minutes):
                         font-weight: 500;
                     "
                     >
-                    Hello Welcome to PoeAI,
+                    Hello Welcome to Tweakr,
                     </p>
                     <p
                     style="
@@ -97,11 +98,11 @@ def email_otp_template(otp_code, expiration_minutes):
                         letter-spacing: 0.56px;
                     "
                     >
-                    Thank you for choosing PoeAI. Use the following OTP
+                    Thank you for choosing Tweakr. Use the following OTP
                     to complete the procedure to change your email address. OTP is
                     valid for
                     <span style="font-weight: 600; color: #1f1f1f;">{expiration_minutes} minutes</span>.
-                    Do not share this code with others, including PoeAI
+                    Do not share this code with others, including Tweakr
                     employees.
                     </p>
                     <p
@@ -131,13 +132,13 @@ def email_otp_template(otp_code, expiration_minutes):
                 >
                 Need help? Ask at
                 <a
-                    href="mailto:poeai@gmail.com"
+                    href="mailto:tweakr01@gmail.com"
                     style="color: #499fb6; text-decoration: none;"
-                    >poeai@gmail.com</a
+                    >tweakr01@gmail.com</a
                 >
                 or visit our
                 <a
-                    href="https://poeai.app"
+                    href="#"
                     target="_blank"
                     style="color: #499fb6; text-decoration: none;"
                     >Help Center</a
@@ -163,7 +164,7 @@ def email_otp_template(otp_code, expiration_minutes):
                     color: #434343;
                 "
                 >
-                PoeAI
+                Tweakr
                 </p>
                 <p style="margin: 0; margin-top: 8px; color: #434343;">
                 Address 540, City, State.

@@ -42,7 +42,7 @@ class EmailService:
         }
         payload = {
             "sender": {
-                "name": "PoeAI | Notifications",
+                "name": "Tweakr | Notifications",
                 "email": self.sender_email,  # Use the sender email from the class
             },
             "to": [

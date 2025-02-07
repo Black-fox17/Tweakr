@@ -14,7 +14,7 @@ logger = logging.getLogger()  # Get the root logger
 
 def configure_logfire():
     logfire.configure(
-        # name="PoeAI",7
+        # name="Tweakr",7
     )
     return logfire
 
