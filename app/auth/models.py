@@ -5,8 +5,7 @@ import uuid
 
 
 from app.core.enums.user_type import UserType
-from app.core.database import Base
-from app.podcasts.models import GeneratedAudio
+from datapipeline.core.database import Base
 
 
 class User(Base):
@@ -20,15 +19,8 @@ class User(Base):
     )
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    contents = relationship("UserContent", back_populates="user")
+    # contents = relationship("UserContent", back_populates="user")
     profile = relationship("UserProfile", back_populates="user", uselist=False)
-    scripts = relationship("Script", back_populates="user")
-    research_topics = relationship("ResearchTopic", back_populates="user")
-    generated_documents = relationship("GeneratedDocument", back_populates="user")
-    generated_audio = relationship(
-        GeneratedAudio, back_populates="user", lazy="dynamic"
-    )
-    episodes = relationship("Episode", back_populates="user", lazy="dynamic")
 
 
 class UserProfile(Base):

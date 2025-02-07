@@ -2,7 +2,7 @@ import os
 from docx import Document
 from sqlalchemy.orm import Session
 from datapipeline.core.database import get_session_with_ctx_manager
-from core.extract_keywords import ExtractKeywords
+from app.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
 
 

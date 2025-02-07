@@ -3,9 +3,9 @@ import streamlit as st
 from dotenv import load_dotenv
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.models.papers import Papers
-from core.extract_keywords import ExtractKeywords
-from core.paper_matcher import PaperKeywordMatcher
-from core.intext_citation import InTextCitationProcessor, ReferenceGenerator
+from app.core.extract_keywords import ExtractKeywords
+from app.core.paper_matcher import PaperKeywordMatcher
+from app.core.intext_citation import InTextCitationProcessor, ReferenceGenerator
 
 # Load environment variables
 load_dotenv()
