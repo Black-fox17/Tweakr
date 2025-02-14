@@ -609,6 +609,20 @@ trio = ["trio (>=0.23)"]
 wmi = ["wmi (>=1.5.1)"]
 
 [[package]]
+name = "elsapy"
+version = "0.5.1"
+description = "A Python module for use with Elsevier's APIs: Scopus, ScienceDirect, others - see https://api.elsevier.com"
+optional = false
+python-versions = "*"
+files = [
+    {file = "elsapy-0.5.1-py3-none-any.whl", hash = "sha256:942592627060f2ed90d9dfcbc452cb3a83f0d03f7b3335f3221ef095aca60e9a"},
+    {file = "elsapy-0.5.1.tar.gz", hash = "sha256:95b0a5094fa4669b0f7257d7d87a2420f91ccab9a039a9a0eb5e43f56fe9ca19"},
+]
+
+[package.dependencies]
+requests = "*"
+
+[[package]]
 name = "exceptiongroup"
 version = "1.2.2"
 description = "Backport of PEP 654 (exception groups)"
@@ -4806,4 +4820,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "19a061a1be4d68e4e2c7ac363dfe805775decb2d155d43278143b6a5cacf0cd6"
+content-hash = "061279f86cb9c32a795fe2786ecb8127b4ae833d3bcc6094e213bf690ba1d35b"

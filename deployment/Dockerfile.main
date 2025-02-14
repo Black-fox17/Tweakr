@@ -53,5 +53,5 @@ RUN chmod +x /code/scripts/streamlit.sh
 ENTRYPOINT ["/code/scripts/streamlit.sh"]
 
 
-CMD ["sh", "-c", "python -m streamlit run /code/app/app.py ${PORT:+--server.port=$PORT} --server.address=0.0.0.0"]
+CMD ["sh", "-c", "python -m streamlit run /code/app/streamlit_app.py ${PORT:+--server.port=$PORT} --server.address=0.0.0.0"]
 

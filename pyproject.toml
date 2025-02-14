@@ -29,6 +29,7 @@ streamlit = "^1.41.1"
 fastapi = "^0.115.8"
 uvicorn = "^0.34.0"
 logfire = "^3.5.3"
+elsapy = "^0.5.1"
 
 
 [build-system]

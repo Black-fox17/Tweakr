@@ -1,9 +1,6 @@
+# app/core/references_generator.py
 import json
 from datetime import datetime, date
-from sqlalchemy.orm import Session
-from datapipeline.core.database import get_session_with_ctx_manager
-from datapipeline.models.papers import Papers
-
 
 class ReferenceGenerator:
     def __init__(self, style="APA"):
@@ -15,9 +12,6 @@ class ReferenceGenerator:
         }
 
     def format_author_list(self, authors: list, style: str) -> str:
-        """
-        Formats a list of authors based on the specified style.
-        """
         if not authors:
             return ""
         if style == "APA":
@@ -40,68 +34,59 @@ class ReferenceGenerator:
         return ", ".join(authors)
 
     def parse_authors(self, authors: str) -> list:
-        """
-        Parses the authors field from the database.
-        Returns a list of authors.
-        """
         if not authors:
             return []
-        try:
-            # Attempt to parse as JSON
-            return json.loads(authors) if authors.startswith("[") else [author.strip() for author in authors.split(",")]
-        except json.JSONDecodeError:
-            # Fallback to treating as a comma-separated string
-            return [author.strip() for author in authors.split(",")]
+        if authors.startswith("[") and authors.endswith("]"):
+            try:
+                return json.loads(authors)
+            except json.JSONDecodeError:
+                pass
+        return [author.strip() for author in authors.split(",")]
 
-    def generate_apa_reference(self, paper, authors: list) -> str:
-        """
-        Generates an APA-style reference for a single paper.
-        """
+    def generate_apa_reference(self, paper, authors: list) -> tuple:
         title = paper.title.capitalize()
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
-
         formatted_authors = self.format_author_list(authors, "APA")
-        return f"""{formatted_authors} ({publication_year}). "{title}"."""
+        reference_text = f"{formatted_authors} ({publication_year}). \"{title}\"."
+        # If a URL exists, return it (otherwise an empty string)
+        url = paper.url if hasattr(paper, "url") and paper.url else ""
+        return reference_text, url
 
-    def generate_mla_reference(self, paper, authors: list) -> str:
-        """
-        Generates an MLA-style reference for a single paper.
-        """
+    def generate_mla_reference(self, paper, authors: list) -> tuple:
         title = paper.title
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
-
         formatted_authors = self.format_author_list(authors, "MLA")
-        return f"""{formatted_authors}. "{title}.", {publication_year}."""
+        reference_text = f"{formatted_authors}. \"{title}.\", {publication_year}."
+        url = paper.url if hasattr(paper, "url") and paper.url else ""
+        return reference_text, url
 
-
-    def generate_chicago_reference(self, paper, authors: list) -> str:
-        """
-        Generates a Chicago-style reference for a single paper.
-        """
+    def generate_chicago_reference(self, paper, authors: list) -> tuple:
         title = paper.title
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
-
         formatted_authors = self.format_author_list(authors, "Chicago")
-        return f"""{formatted_authors}. "{title}"., {publication_year}."""
+        reference_text = f"{formatted_authors}. \"{title}\"., {publication_year}."
+        url = paper.url if hasattr(paper, "url") and paper.url else ""
+        return reference_text, url
 
     def generate_references(self, matching_titles: list, category: str) -> list:
-        """
-        Generates references for the matching papers based on the selected style.
-        """
         references = []
+        from datapipeline.core.database import get_session_with_ctx_manager
+        from datapipeline.models.papers import Papers
         with get_session_with_ctx_manager() as session:
             for title in matching_titles:
-                paper = session.query(Papers).filter(Papers.title == title, Papers.category == category).first()
+                paper = (
+                    session.query(Papers)
+                    .filter(Papers.title == title, Papers.category == category)
+                    .first()
+                )
                 if paper:
-                    # Fetch authors dynamically for each paper
                     authors = self.parse_authors(paper.authors)
-
-                    # Generate references based on the selected style
                     reference_func = self.styles.get(self.style)
                     if reference_func:
+                        # Each reference is now a tuple: (reference_text, url)
                         references.append(reference_func(paper, authors))
                     else:
                         raise ValueError(f"Unsupported reference style: {self.style}")

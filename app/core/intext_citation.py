@@ -10,6 +10,7 @@ from app.core.references_generator import ReferenceGenerator
 from datapipeline.core.mongo_client import MongoDBVectorStoreManager
 from datapipeline.core.utils import embeddings 
 from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
+from app.core.hyperlink_helper import add_hyperlink
 from app.core.headings import headers  # Import the headings
 import spacy
 import logging
@@ -19,8 +20,6 @@ nlp = spacy.load("en_core_web_sm")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-
-
 
 
 class InTextCitationProcessor:
@@ -43,33 +42,77 @@ class InTextCitationProcessor:
         self.collection_name = collection_name
         self.threshold = threshold
         self.top_k = top_k
-        self.headers = headers  # Load predefined headings
+        self.headers = headers  # Predefined headings (if any)
         self.matched_paper_titles = []  # Store matched paper titles
 
         # Load SpaCy model for sentence segmentation
         self.nlp = spacy.load("en_core_web_sm")
 
+    def is_dynamic_heading(self, para) -> bool:
+        """
+        Dynamically detects if a paragraph is a heading or subheading using multiple heuristics.
+
+        Parameters:
+        - para: A docx paragraph object.
+
+        Returns:
+        - True if the paragraph is likely a heading/subheading; otherwise, False.
+        """
+        text = para.text.strip()
+        if not text:
+            return False
+
+        # 1. Check the paragraph style (if available)
+        try:
+            style_name = para.style.name.lower()
+            if "heading" in style_name or "title" in style_name:
+                logging.info(f"Detected heading based on style: '{text}'")
+                return True
+        except Exception as e:
+            logging.warning("Could not determine paragraph style.")
+
+        # 2. Check against predefined headers
+        if text in self.headers:
+            logging.info(f"Detected heading based on predefined headers: '{text}'")
+            return True
+
+        # 3. Heuristic: if the text is short (fewer than 8 words) and lacks punctuation,
+        # it may be a heading.
+        words = text.split()
+        if len(words) < 8 and not any(punct in text for punct in [".", "?", "!", ";", ":"]):
+            logging.info(f"Detected potential heading based on text heuristic: '{text}'")
+            return True
+
+        return False
 
     def add_references_section(self, doc: Document, category: str):
         """
         Generate and append a references section to the document.
-
-        Parameters:
-        - doc (Document): The document to modify.
-        - category (str): Category of the papers.
         """
         if not self.matched_paper_titles:
             logging.info("No matched papers to add to the references section.")
             return
 
+        # references is now a list of tuples: (reference_text, url)
         references = self.reference_generator.generate_references(self.matched_paper_titles, category)
         if references:
-            # Add a heading for the references section
+            # Add a heading for the references section.
             doc.add_paragraph("References")
-
-            # Add each reference as a new paragraph
-            for ref in references:
-                doc.add_paragraph(ref)
+            for ref_text, ref_url in references:
+                para = doc.add_paragraph()
+                # Add the main reference text.
+                para.add_run(ref_text)
+                # If there is a URL, append a label and add the hyperlink.
+                if ref_url:
+                    # Choose the label based on style.
+                    if self.reference_generator.style == "APA":
+                        label = " Retrieved from "
+                    elif self.reference_generator.style == "MLA":
+                        label = " Available at "
+                    else:  # Chicago or other
+                        label = " "
+                    para.add_run(label)
+                    add_hyperlink(para, ref_url, ref_url)
 
     def fetch_metadata_from_db(self, title: str) -> Dict:
         """
@@ -87,14 +130,12 @@ class InTextCitationProcessor:
                 return {"authors": ["Unknown"], "published_date": "n.d."}
 
             try:
-                # Parse authors
+                # Use the ReferenceGenerator's parse_authors method for consistency
                 authors = []
                 if getattr(paper, "authors", None):
-                    if paper.authors.strip().startswith("["):
-                        authors = json.loads(paper.authors)
-                    else:
-                        authors = [a.strip() for a in paper.authors.split(",")]
-
+                    authors = self.reference_generator.parse_authors(paper.authors)
+                if not authors:
+                    authors = ["Unknown"]
 
                 # Parse publication year
                 published_date = "n.d."
@@ -103,7 +144,7 @@ class InTextCitationProcessor:
                         published_date = str(paper.pub_date.year)
 
                 metadata = {
-                    "authors": authors if authors else ["Unknown"],
+                    "authors": authors,
                     "published_date": published_date or "n.d."
                 }
                 logging.debug(f"Fetched metadata from DB: {metadata}")
@@ -112,16 +153,6 @@ class InTextCitationProcessor:
             except Exception as e:
                 logging.error(f"Error fetching metadata for title '{title}': {e}")
                 return {"authors": ["Unknown"], "published_date": "n.d."}
-
-    def is_heading(self, paragraph: str) -> bool:
-        """
-        Check if a paragraph is a heading to be skipped.
-        """
-        candidate = paragraph.strip()
-        is_heading_detected = candidate in self.headers
-        if is_heading_detected:
-            logging.info(f"Detected heading: '{candidate}'")
-        return is_heading_detected
 
     def format_citation(self, authors: List[str], year: str) -> str:
         """
@@ -166,26 +197,12 @@ class InTextCitationProcessor:
             best_document = []
             highest_score = float('-inf')
 
-            # for doc in results:
-            #     metadata = doc.metadata
-            #     score = metadata.get("score", 0.0)
-            #     print("SCORE: ", score)
-            #     # TODO: store the score of the document and if one is higher than the last stored score store it and replace the last stored score and document for all the retrieved papers.
-            #     if score >= self.threshold:
-            #         highest_score = score
-            #         filtered_results.append(doc)
-            #         if score >= highest_score:
-            #             highest_score = score
-            #             best_document.clear()
-            #             best_document.append(doc)
-
             for doc in results:
                 metadata = doc.metadata
                 score = metadata.get("score", 0.0)
 
                 if score >= self.threshold:
                     filtered_results.append(doc)
-
                     if score > highest_score:
                         highest_score = score
                         best_document.clear()  # Ensure only one document is in the list
@@ -207,7 +224,6 @@ class InTextCitationProcessor:
             logging.error(f"Error during similarity search for sentence '{sentence}': {e}")
             return []
 
-
     def process_sentences(self, input_path: str, output_path: str):
         """
         Process each sentence in the document for in-text citations and add references.
@@ -215,7 +231,6 @@ class InTextCitationProcessor:
         Parameters:
         - input_path (str): Path to the input document.
         - output_path (str): Path to save the output document.
-        - category (str): Category of the papers for generating references.
         """
         logging.info(f"Starting sentence-level processing for file: '{input_path}'")
 
@@ -234,8 +249,8 @@ class InTextCitationProcessor:
                 updated_paragraphs.append("")
                 continue
 
-            # Check if this paragraph is recognized as a heading
-            if self.is_heading(paragraph_text):
+            # Use dynamic heading detection to skip headings and subheadings
+            if self.is_dynamic_heading(para):
                 logging.info(f"Skipping heading: '{paragraph_text}' in paragraph {para_idx}")
                 updated_paragraphs.append(paragraph_text)
                 continue
@@ -279,13 +294,12 @@ class InTextCitationProcessor:
                         citation = self.format_citation(authors, year)
                         citation_texts.append(citation)
 
-                    # If we have any citations, append them
+                    # Append the citations to the sentence if available
                     if citation_texts:
                         sentence_text += " " + " ".join(citation_texts)
 
                 except Exception as e:
                     logging.error(f"Error processing sentence '{sentence_text}' in paragraph {para_idx}: {e}")
-                    # Add the original sentence to keep doc consistent
                     processed_sentences.append(sentence_text)
                     continue
 

@@ -1,5 +1,15 @@
 import os
 import streamlit as st
+
+import os
+import sys
+
+# Calculate the project root (assumes app/ is one level below the project root)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+print("Project Root: ", PROJECT_ROOT)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from dotenv import load_dotenv
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.models.papers import Papers
