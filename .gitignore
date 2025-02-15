@@ -8,6 +8,7 @@ __pycache__/
 .env
 *.pdf
 TODO
+*json
 
 # Distribution / packaging
 /export_path.sh
