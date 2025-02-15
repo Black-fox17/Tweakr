@@ -1,109 +1,207 @@
 import json
+import logging
 from typing import Optional, Dict, Any
 from elsapy.elsclient import ElsClient
 from elsapy.elssearch import ElsSearch
+from elsapy.elsdoc import FullDoc
+
+from datapipeline.core.constants import ELSEVIER_API_KEY
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class ElsevierPaperFetcher:
-    def __init__(self, title_query: str, config: Dict[str, str], use_scopus: bool = True):
+    def __init__(self, title_query: str, config: Dict[str, str], use_scopus: bool = True, limit_results: Optional[int] = None):
         """
-        Initializes the fetcher with a title query.
+        Initializes the fetcher with a title query and optional result limit.
         
         Parameters:
-        - title_query (str): The title or a part of the title of the paper.
+        - title_query (str): The title or part of the title of the paper.
         - config (dict): A dictionary with keys 'apikey' and 'insttoken'.
         - use_scopus (bool): Whether to use Scopus (True) or ScienceDirect (False) for the search.
+        - limit_results (int): Optional limit on the number of results to fetch. If None, fetch all.
         """
+        logging.debug("Initializing ElsevierPaperFetcher")
         self.title_query = title_query
         self.document: Optional[Dict[str, Any]] = None
-        
+        self.limit_results = limit_results  # Set the limit on number of results
+
         # Initialize the Elsevier client using the provided configuration dictionary.
+        logging.debug("Initializing ElsClient with provided API key and insttoken")
         self.client = ElsClient(config['apikey'])
-        self.client.inst_token = config['insttoken']
+        if not config['insttoken']:
+            self.client.inst_token = None
+            logging.warning("No insttoken provided, proceeding without it.")
+        else:
+            self.client.inst_token = config['insttoken']
         
         # Set search type.
         self.search_type = 'scopus' if use_scopus else 'sciencedirect'
-        self.top_k = 1
+        self.top_k = 25  # Set the number of results per page
 
     def fetch_paper(self):
         """
         Searches for the paper matching the title query and loads its metadata.
         """
-        # Construct a query using the title. (Adjust the query format as needed.)
+        logging.debug(f"Fetching paper with title query: {self.title_query}")
+        
+        # Construct a query using the title.
         query = f"TITLE({self.title_query})"
         search = ElsSearch(query, self.search_type)
-        search.execute(self.client, get_all=True)
-        if search.results and len(search.results) > 0:
-            # We'll use the first result.
-            self.document = search.results[0]
-            # For debugging, print the title from the returned metadata (if available)
-            title = self.get_title()
-            print(f"Loaded document: {title}")
+
+        all_results = []  # Store all results
+        start = 0  # Initial offset
+        total_results = None  # Keep track of total results for stopping pagination
+        
+        while True:
+            logging.debug(f"Sending GET request to fetch papers starting at index {start}")
+            search.execute(self.client, count=self.top_k)  # No `start`, rely on offset
+            
+            if search.results and len(search.results) > 0:
+                # Append results from the current page to all_results
+                all_results.extend(search.results)
+                logging.debug(f"Fetched {len(search.results)} results (Total fetched: {len(all_results)})")
+            else:
+                logging.warning(f"No more results found starting at index {start}")
+                break  # Exit the loop if no more results
+
+            # If the result limit is set and we've fetched that many, stop
+            if self.limit_results and len(all_results) >= self.limit_results:
+                logging.debug(f"Fetched the limited {self.limit_results} results.")
+                break
+
+            # If we have fetched all results, stop the loop
+            if total_results is None:
+                total_results = search.tot_num_res
+            if len(all_results) >= total_results:
+                logging.debug(f"Fetched all {total_results} results.")
+                break
+
+            # Move to the next set of results (pagination)
+            start += self.top_k  # Increment the offset for the next page
+        
+        if all_results:
+            # Print the entire response
+            logging.info("Full response fetched:")
+            print(json.dumps(all_results, indent=2))  # Print the entire response (formatted)
+            
+            # Extract the DOIs and full-text URLs
+            doi_list = [entry.get("prism:doi") for entry in all_results if "prism:doi" in entry]
+            full_text_urls = self.extract_full_text_urls(all_results)
+            logging.info(f"Extracted DOIs: {doi_list}")
+            logging.info(f"Extracted Full Text URLs: {full_text_urls}")
+
+            # Extract metadata for each result
+            for result in all_results:
+                title = self.extract_title(result)
+                authors = self.extract_authors(result)
+                pub_date = self.extract_pub_date(result)
+                url = self.extract_url(result)
+                logging.info(f"Title: {title}")
+                logging.info(f"Authors: {authors}")
+                logging.info(f"Publication Date: {pub_date}")
+                logging.info(f"URL: {url}")
+
         else:
-            print("No document found matching the title query.")
+            logging.warning("No document found matching the title query.")
 
-    def get_title(self) -> Optional[str]:
-        """
-        Returns the title of the fetched paper.
-        """
-        if self.document:
-            # Scopus responses often use 'dc:title'
-            return self.document.get("dc:title")
-        return None
+        return doi_list, full_text_urls
 
-    def get_authors(self) -> Optional[str]:
+    def extract_full_text_urls(self, results: list) -> list:
         """
-        Returns the authors of the fetched paper.
+        Extracts the full-text URLs from the 'link' field where @ref='full-text'.
         """
-        if self.document:
-            # Authors may be stored under 'dc:creator'
-            return self.document.get("dc:creator")
-        return None
+        full_text_urls = []
+        for entry in results:
+            # Look for the 'link' field and extract the full-text URL if @ref='full-text'
+            for link in entry.get("link", []):
+                if link.get("@ref") == "full-text":
+                    full_text_urls.append(link.get("@href"))
+        return full_text_urls
 
-    def get_published_date(self) -> Optional[str]:
+    def extract_title(self, result: dict) -> Optional[str]:
         """
-        Returns the published date of the fetched paper.
+        Extracts the title of the paper.
         """
-        if self.document:
-            # For Scopus, the cover date might be under 'prism:coverDate'
-            return self.document.get("prism:coverDate")
-        return None
+        title = result.get("dc:title")
+        if title:
+            return title
+        return "Title not available"
 
-    def get_summary(self) -> Optional[str]:
+    def extract_authors(self, result: dict) -> Optional[str]:
         """
-        Returns the summary (abstract) of the fetched paper.
+        Extracts the authors of the paper.
         """
-        if self.document:
-            # Often the abstract is in 'dc:description' or a similar field.
-            return self.document.get("dc:description")
-        return None
+        authors = result.get("dc:creator")
+        if authors:
+            return authors
+        return "Authors not available"
 
-    def get_links(self) -> Optional[str]:
+    def extract_pub_date(self, result: dict) -> Optional[str]:
         """
-        Returns a primary link (URL) for the fetched paper.
+        Extracts the publication date of the paper.
         """
-        if self.document:
-            # Elsevier documents may provide a URL in a field like 'link'
-            # This is an example; adjust according to the actual response.
-            return self.document.get("link")
-        return None
+        pub_date = result.get("prism:coverDate")
+        if pub_date:
+            return pub_date
+        return "Publication date not available"
 
-    def get_content(self) -> Optional[str]:
+    def extract_url(self, result: dict) -> Optional[str]:
         """
-        Returns the full content of the paper if available.
-        (Often, full text is not directly available via the search API.)
+        Extracts the URL of the paper.
         """
-        if self.document:
-            # Placeholder: if your document object contains full text, return it.
-            return self.document.get("full_text")
-        return None
+        url = result.get("prism:url")
+        if url:
+            return url
+        return "URL not available"
+
+
+    def fetch_full_document(self, doi: str = None, uri: str = None):
+        """
+        Given a DOI or URI, fetch the full document using the FullDoc class.
+        """
+        if doi:
+            logging.debug(f"Fetching full document for DOI: {doi}")
+            try:
+                full_doc = FullDoc(doi=doi)
+                if full_doc.read(self.client):  # Fetch full document data from Elsevier
+                    logging.info(f"Successfully fetched full document for DOI: {doi}")
+                    print(f"Full content for DOI {doi}:")
+                    print(json.dumps(full_doc.data, indent=2))  # Printing the full content
+                else:
+                    logging.warning(f"Failed to fetch full document for DOI: {doi}")
+            except Exception as e:
+                logging.error(f"Error fetching full document for DOI {doi}: {e}")
+
+        elif uri:
+            logging.debug(f"Fetching full document for URI: {uri}")
+            try:
+                full_doc = FullDoc(uri=uri)
+                if full_doc.read(self.client):  # Fetch full document data from Elsevier
+                    logging.info(f"Successfully fetched full document for URI: {uri}")
+                    print(f"Full content for URI {uri}:")
+                    print(json.dumps(full_doc.data, indent=2))  # Printing the full content
+                else:
+                    logging.warning(f"Failed to fetch full document for URI: {uri}")
+            except Exception as e:
+                logging.error(f"Error fetching full document for URI {uri}: {e}")
 
 # Example usage:
 if __name__ == "__main__":
-    # Instantiate the fetcher with a sample title query.
-    fetcher = ElsevierPaperFetcher("Quantum algorithms")
-    fetcher.fetch_paper()
-    print("Title:", fetcher.get_title())
-    print("Authors:", fetcher.get_authors())
-    print("Published Date:", fetcher.get_published_date())
-    print("Summary:", fetcher.get_summary())
-    print("Link:", fetcher.get_links())
+    logging.debug("Starting ElsevierPaperFetcher example.")
+    
+    # Define configuration as a dictionary.
+    config_dict = {
+        "apikey": ELSEVIER_API_KEY,
+        "insttoken": None  # Example: you can add your institution token if available
+    }
+    
+    # Initialize the fetcher with a title query and the config dictionary.
+    fetcher = ElsevierPaperFetcher("Quantum algorithms", config=config_dict, limit_results=5)  # Set a small limit
+    doi_list, full_text_urls = fetcher.fetch_paper()
+
+    logging.info(f"DOIs Extracted: {doi_list}")
+    logging.info(f"Full Text URLs Extracted: {full_text_urls}")
+
+    for uri in full_text_urls:
+        fetcher.fetch_full_document(uri=uri)
