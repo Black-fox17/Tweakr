@@ -1,6 +1,6 @@
 import time
 
-def retry_with_backoff(func, max_retries=3, initial_delay=2, *args, **kwargs):
+def retry_with_backoff(func, max_retries=3, initial_delay=30, *args, **kwargs):
     """
     Retry a function with exponential backoff.
     
