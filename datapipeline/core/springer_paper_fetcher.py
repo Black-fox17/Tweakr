@@ -1,165 +1,182 @@
 import logging
 import requests
-from typing import Optional
 import xml.etree.ElementTree as ET
+
 
 from datapipeline.core.constants import SPRINGER_API_KEY
 
-# Set up logging
+# Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class SpringerPaperFetcher:
-    def __init__(self, query: str, limit_results: Optional[int] = None, api_key = SPRINGER_API_KEY):
+    def __init__(self, query: str, api_key: str = SPRINGER_API_KEY, base_url: str = "https://api.springernature.com/openaccess/jats"):
         """
-        Initializes the fetcher with a query and optional result limit.
-
+        Initializes the fetcher.
+        
         Parameters:
-        - query (str): The query for the search.
-        - api_key (str): API key for Springer API.
-        - limit_results (int): Optional limit on the number of results to fetch. If None, fetch all.
+        - query (str): The search query (e.g. "quantum energy")
+        - api_key (str): Your Springer API key.
+        - base_url (str): The base URL for the Springer JATS API.
         """
         self.query = query
         self.api_key = api_key
-        self.limit_results = limit_results
-        self.base_url = "https://api.springernature.com/openaccess/json"
-        self.jats_url = "https://api.springernature.com/openaccess/jats"
-        self.top_k = 10  # Number of results per page
+        self.base_url = base_url
 
-    def fetch_metadata(self):
+    def _get_all_text(self, elem: ET.Element) -> str:
         """
-        Fetch metadata for articles based on the query and extract relevant details.
+        Recursively extracts and concatenates all text from an element.
         """
-        logging.debug(f"Fetching metadata for query: {self.query}")
+        texts = []
+        if elem.text:
+            texts.append(elem.text)
+        for child in elem:
+            texts.append(self._get_all_text(child))
+            if child.tail:
+                texts.append(child.tail)
+        return "".join(texts)
 
-        url = f"{self.base_url}?api_key={self.api_key}&q={self.query}"
-        all_results = []
-        page = 1  # Start at the first page
+    def _parse_article_info_from_element(self, article: ET.Element) -> dict:
+        """
+        Given an <article> element, extracts the following:
+          - title
+          - authors
+          - doi and URL
+          - published date
+          - body content (all text from <body>)
+        Returns a dictionary with these keys.
+        """
+        info = {}
 
-        while True:
-            logging.debug(f"Sending GET request to fetch metadata (page {page})")
-            response = requests.get(f"{url}&s={page}")
-            data = response.json()
-
-            if 'records' in data:
-                all_results.extend(data['records'])
-                logging.debug(f"Fetched {len(data['records'])} results (Total fetched: {len(all_results)})")
-            else:
-                logging.warning("No records found.")
-                break
-
-            # Check if there's a next page and handle pagination
-            if 'nextPage' in data:
-                page += 1
-            else:
-                break
-
-            # If the result limit is set and we've fetched that many, stop
-            if self.limit_results and len(all_results) >= self.limit_results:
-                logging.debug(f"Fetched the limited {self.limit_results} results.")
-                break
-
-        if all_results:
-            logging.info(f"Total {len(all_results)} records fetched.")
-            return all_results
+        # Extract title
+        title_elem = article.find("front/article-meta/title-group/article-title")
+        if title_elem is not None and title_elem.text:
+            info["title"] = title_elem.text.strip()
         else:
-            logging.warning("No metadata found matching the query.")
-            return []
+            info["title"] = "Title not found"
 
-    def fetch_full_text(self):
-        """
-        Given a DOI, fetch the full-text article content from Springer.
-        """
-        logging.debug(f"Fetching full-text content for DOI: {doi}")
+        # Extract authors
+        authors = []
+        contrib_elems = article.findall("front/article-meta/contrib-group/contrib[@contrib-type='author']")
+        for contrib in contrib_elems:
+            name_elem = contrib.find("name")
+            if name_elem is not None:
+                given = name_elem.find("given-names")
+                surname = name_elem.find("surname")
+                author_name = ""
+                if given is not None and given.text:
+                    author_name += given.text.strip() + " "
+                if surname is not None and surname.text:
+                    author_name += surname.text.strip()
+                if author_name:
+                    authors.append(author_name)
+        info["authors"] = ", ".join(authors) if authors else "Authors not found"
 
-        url = f"{self.jats_url}?api_key={self.api_key}&q={self.query}"
-        all_results = []
+        # Extract DOI and construct URL
+        doi_elem = article.find("front/article-meta/article-id[@pub-id-type='doi']")
+        if doi_elem is not None and doi_elem.text:
+            doi = doi_elem.text.strip()
+            info["doi"] = doi
+            info["url"] = f"https://doi.org/{doi}"
+        else:
+            info["doi"] = ""
+            info["url"] = "URL not available"
+
+        # Extract published date (using the electronic pub date)
+        pub_date_elem = article.find("front/article-meta/pub-date[@publication-format='electronic']")
+        if pub_date_elem is not None:
+            year = pub_date_elem.find("year")
+            month = pub_date_elem.find("month")
+            day = pub_date_elem.find("day")
+            parts = []
+            if year is not None and year.text:
+                parts.append(year.text.strip())
+            if month is not None and month.text:
+                parts.append(month.text.strip().zfill(2))
+            if day is not None and day.text:
+                parts.append(day.text.strip().zfill(2))
+            info["published_date"] = "-".join(parts) if parts else "Published date not found"
+        else:
+            info["published_date"] = "Published date not found"
+
+        # Extract body text content
+        body_elem = article.find("body")
+        if body_elem is not None:
+            info["content"] = self._get_all_text(body_elem).strip()
+        else:
+            info["content"] = "No body content found"
+
+        return info
+
+    def parse_articles_info(self, xml_string: str) -> list:
+        """
+        Parses an XML string representing a Springer JATS response and extracts all article info
+        from the <records> tag.
+        
+        Returns a list of dictionaries, one for each article.
+        """
+        articles_info = []
         try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                full_text_data = response.text  # Raw XML response from Springer
-                return self.extract_full_text_url(full_text_data)
-            else:
-                logging.warning(f"Failed to fetch full text for DOI: {self.query}")
-                return None
-        except Exception as e:
-            logging.error(f"Error fetching full text for DOI {self.query}: {e}")
-            return None
-
-    def extract_full_text_url(self, xml_data: str):
-        """
-        Extracts the full-text URL from the XML response.
-        """
-        try:
-            # Parse the XML response
-            root = ET.fromstring(xml_data)
-            # Find all the full-text links
-            full_text_links = []
-
-            for article in root.findall(".//article"):
-                for link in article.findall(".//link[@ref='full-text']"):
-                    full_text_url = link.get("{http://www.w3.org/1999/xlink}href")
-                    if full_text_url:
-                        full_text_links.append(full_text_url)
-
-            return full_text_links
+            root = ET.fromstring(xml_string)
         except ET.ParseError as e:
             logging.error(f"Error parsing XML: {e}")
+            return articles_info
+
+        # If the XML is wrapped in a <response> element, look for all <article> tags within <records>
+        if root.tag.lower() == "response":
+            article_elems = root.findall(".//records/article")
+            if not article_elems:
+                logging.error("No <article> elements found in the response.")
+            for article in article_elems:
+                info = self._parse_article_info_from_element(article)
+                articles_info.append(info)
+        else:
+            # If the XML is already a single <article>, parse it.
+            info = self._parse_article_info_from_element(root)
+            articles_info.append(info)
+        return articles_info
+
+    def fetch_articles(self) -> list:
+        """
+        Fetches the XML from the Springer JATS API using the query parameters,
+        then parses it to extract information for all articles in the <records> tag.
+        
+        Returns a list of article information dictionaries.
+        """
+        params = {
+            "api_key": self.api_key,
+            "q": self.query
+        }
+        try:
+            response = requests.get(self.base_url, params=params)
+            logging.debug(f"Request URL: {response.url}")
+            if response.status_code == 200:
+                xml_string = response.text
+                logging.info("Successfully fetched XML from Springer API")
+                return self.parse_articles_info(xml_string)
+            else:
+                logging.error(f"Error fetching articles: HTTP {response.status_code}")
+                return []
+        except Exception as e:
+            logging.error(f"Exception during request: {e}")
             return []
-
-    def extract_metadata(self, articles: list):
-        """
-        Extract relevant metadata (title, DOI, authors, publication date) from the articles.
-        """
-        metadata_list = []
-        for article in articles:
-            title = article.get("title", "Title not available")
-            doi = article.get("doi", "DOI not available")
-            authors = self.extract_authors(article)
-            publication_date = article.get("publicationDate", "Publication date not available")
-            metadata = {
-                "title": title,
-                "doi": doi,
-                "authors": authors,
-                "publication_date": publication_date
-            }
-            metadata_list.append(metadata)
-        return metadata_list
-
-    def extract_authors(self, article):
-        """
-        Extracts authors from the article metadata.
-        """
-        authors = []
-        for author in article.get("authors", []):
-            author_name = f"{author.get('givenNames', '')} {author.get('surname', '')}"
-            authors.append(author_name)
-        return authors
-
-    def fetch_articles(self):
-        """
-        Fetches articles metadata and full text for each article.
-        """
-        metadata = self.fetch_metadata()
-        articles_metadata = self.extract_metadata(metadata)
-
-        for article in articles_metadata:
-            doi = article["doi"]
-            if doi != "DOI not available":
-                full_text = self.fetch_full_text(doi)
-                if full_text:
-                    logging.info(f"Full text URLs for {doi}: {full_text}")
-
-        return articles_metadata
-
 
 # Example usage:
 if __name__ == "__main__":
-    logging.debug("Starting SpringerPaperFetcher example.")
-
-    # Define configuration as a dictionary.
+    # Replace with your actual API key and query parameters.
     query = "quantum energy"
-
-    fetcher = SpringerPaperFetcher(query=query, limit_results=5)  # Set a small limit
-    articles_metadata = fetcher.fetch_articles()
-
-    logging.info(f"Fetched articles metadata: {articles_metadata}")
+    
+    fetcher = SpringerPaperFetcher(query=query)
+    articles_info = fetcher.fetch_articles()
+    
+    if articles_info:
+        for idx, article in enumerate(articles_info, start=1):
+            logging.info(f"Article {idx}:")
+            logging.info(f"  Title: {article.get('title')}")
+            logging.info(f"  Authors: {article.get('authors')}")
+            logging.info(f"  URL: {article.get('url')}")
+            logging.info(f"  Published Date: {article.get('published_date')}")
+            # Print only the first 300 characters of the content
+            content_preview = article.get("content", "")[:300]
+            logging.info(f"  Content (first 300 chars): {content_preview}\n")
+    else:
+        logging.error("No articles information could be fetched.")

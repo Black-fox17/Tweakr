@@ -1,5 +1,6 @@
 import os
 from typing import Optional, List
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
@@ -551,27 +552,43 @@ class PapersPipeline:
                     # Increment the offset for the next batch
                     offset += batch_size
             elif source.lower() == "elsevier":
+                # Instantiate the ElsevierPaperFetcher with your query and result limit.
                 elsevier_fetcher = ElsevierPaperFetcher(title_query=query, limit_results=batch_size)
+
+                # Fetch paper metadata from Elsevier – this returns lists of DOIs, full text URLs, and a list of metadata dicts.
                 doi_list, full_text_urls, metadata_list = elsevier_fetcher.fetch_paper()
+
                 for meta in metadata_list:
                     print(f"Processing Elsevier paper: {meta['title']}")
                     
+                    # If a valid URL is present, try to fetch the full document.
                     if meta['url'] and meta['url'] != "URL not available":
-                        document_text = elsevier_fetcher.fetch_full_document(uri=meta['url'])
-                        keywords = self.extract_keywords(document_text)
-                        with get_session_with_ctx_manager() as session:
-                            self.save_paper_metadata(session, {
-                                "title": meta['title'],
-                                "category": category,
-                                "published_date": datetime.strptime(meta['published_date'], "%Y-%m-%d") if meta['published_date'] != "Publication date not available" else datetime(1900, 1, 1),
-                                "authors": meta['authors'],
-                                "url": meta['url'],
-                                "keywords": keywords,
-                                "collection_name": category,
-                                "is_processed": True
-                            })
-                        doc = Document(page_content=document_text, metadata=meta)
-                        print(f"Fetched page content for Elsevier paper '{meta['title']}': {document_text}")
+                        # Passing both DOI and URL to fetch_full_document so it can try with DOI first.
+                        document_text = elsevier_fetcher.fetch_full_document(doi=meta.get("doi"), uri=meta.get("url"))
+                        if document_text:
+                            # Process the document text (e.g. extract keywords)
+                            keywords = self.extract_keywords(document_text)
+                            # Save the paper metadata using a database session 
+                            with get_session_with_ctx_manager() as session:
+                                self.save_paper_metadata(session, {
+                                    "title": meta['title'],
+                                    "category": category,
+                                    "published_date": datetime.strptime(meta['published_date'], "%Y-%m-%d") 
+                                    if meta['published_date'] != "Publication date not available" 
+                                    else datetime(1900, 1, 1),
+                                    "authors": meta['authors'],
+                                    "url": meta['url'],
+                                    "keywords": keywords,
+                                    "collection_name": category,
+                                    "is_processed": True
+                                })
+                            # Create a Document object 
+                            doc = Document(page_content=document_text, metadata=meta)
+                            print(f"Fetched page content for Elsevier paper '{meta['title']}': {document_text[:300]}...")
+                        else:
+                            print(f"No full document text retrieved for Elsevier paper '{meta['title']}'.")
+
+                    # Check whether the document already exists in MongoDB.
                     if self.mongo_manager.document_exists(collection_name=category, title=meta['title']):
                         print(f"Elsevier paper '{meta['title']}' already exists in MongoDB. Updating metadata...")
                         self.mongo_manager.single_update_document(
@@ -579,43 +596,63 @@ class PapersPipeline:
                         )
                     else:
                         print(f"Elsevier paper '{meta['title']}' does not exist in MongoDB. Storing new document...")
+                        # If we haven’t already created a Document object (because we couldn’t fetch text), we create one now.
+                        if 'doc' not in locals():
+                            doc = Document(page_content="", metadata=meta)
                         self.mongo_manager.store_document(collection_name=category, document=doc)
                         print(f"Document stored in MongoDB collection '{category}'.")
+
             elif source.lower() == "springer":
-                springer_fetcher = SpringerPaperFetcher(query=query, limit_results=batch_size)
+                # Instantiate the SpringerPaperFetcher with your query and (optionally) a limit
+                springer_fetcher = SpringerPaperFetcher(query=query)
                 articles_metadata = springer_fetcher.fetch_articles()
+
                 for article in articles_metadata:
                     print(f"Processing Springer paper: {article['title']}")
+                    
+                    # Save the metadata (without the full text) into your relational or metadata store
                     with get_session_with_ctx_manager() as session:
                         self.save_paper_metadata(session, {
                             "title": article['title'],
                             "category": category,
-                            "published_date": datetime.strptime(article['publication_date'], "%Y-%m-%d") if article['publication_date'] != "Publication date not available" else datetime(1900, 1, 1),
+                            # We expect the published date to be in YYYY-MM-DD format;
+                            # if not available, we default to January 1, 1900.
+                            "published_date": datetime.strptime(article['published_date'], "%Y-%m-%d")
+                                if article['published_date'] != "Published date not found" else datetime(1900, 1, 1),
                             "authors": article['authors'],
                             "url": article['url'],
-                            "keywords": [],  # Insert keyword extraction if needed
+                            "keywords": [],  # (Insert keyword extraction if needed)
                             "collection_name": category,
                             "is_processed": True
                         })
-                    # Fetch full text URLs for Springer
-                    if article['doi'] and article['doi'] != "DOI not available":
-                        full_text_urls = springer_fetcher.fetch_full_text(article['doi'])
-                        print(f"Springer full text URLs for {article['doi']}: {full_text_urls}")
+                    
+                    # For Springer we already parse the <body> content into the "content" key.
+                    if article.get("content") and article.get("content") != "No body content found":
+                        # Create a Document using the full text content and the metadata.
+                        doc = Document(page_content=article["content"], metadata=article)
+                        # Print a preview of the content (first 300 characters)
+                        print(f"Fetched page content for Springer paper '{article['title']}': {article['content'][:300]}...")
+                        
+                        # Store the document into MongoDB (update if already exists)
+                        if self.mongo_manager.document_exists(collection_name=category, title=article['title']):
+                            print(f"Springer paper '{article['title']}' already exists in MongoDB. Updating metadata...")
+                            self.mongo_manager.single_update_document(
+                                collection_name=category,
+                                title=article['title'],
+                                updated_metadata={"url": article['url']}
+                            )
+                        else:
+                            print(f"Springer paper '{article['title']}' does not exist in MongoDB. Storing new document...")
+                            self.mongo_manager.store_document(collection_name=category, document=doc)
+                            print(f"Document stored in MongoDB collection '{category}'.")
+                    else:
+                        print(f"No full document content available for Springer paper '{article['title']}'.")
 
 # Example usage:
 if __name__ == "__main__":
     from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
-    # Elsevier configuration dictionary
-    # elsevier_config = {
-    #     "apikey": ELSEVIER_API_KEY,
-    #     "insttoken": None  # or your institutional token
-    # }
     pipeline = PapersPipeline(
         mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
         mongo_db_name=MONGO_DB_NAME,
-        # springer_api_key="YOUR_SPRINGER_API_KEY",
-        # elsevier_config=elsevier_config
     )
-
-    # Process papers for a given query and category using all sources if not specified.
     pipeline.process_papers(query="quantum energy", category="physics", download_dir="./store", batch_size=5)

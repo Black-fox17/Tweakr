@@ -209,12 +209,16 @@ class ElsevierPaperFetcher:
 
 
     def extract_metadata(self, entry: dict) -> Dict[str, Any]:
+        # Use the extract_full_text_urls method on the current entry.
+        urls = self.extract_full_text_urls([entry])
+        full_text_url = urls[0] if urls else entry.get("prism:url", "URL not available")
+        
         return {
             "title": entry.get("dc:title", "Title not available"),
             "doi": entry.get("prism:doi", "DOI not available"),
             "authors": entry.get("dc:creator", "Authors not available"),
             "published_date": entry.get("prism:coverDate", "Publication date not available"),
-            "url": entry.get("prism:url", "URL not available")
+            "url": full_text_url
         }
 
 
@@ -274,6 +278,8 @@ if __name__ == "__main__":
     # Initialize the fetcher with a title query and the config dictionary.
     fetcher = ElsevierPaperFetcher("Quantum algorithms", limit_results=5)  # Set a small limit
     doi_list, full_text_urls, metadata_list = fetcher.fetch_paper()
+
+    print(f"Metadata: {metadata_list}")
 
     logging.info(f"DOIs Extracted: {doi_list}")
     logging.info(f"Full Text URLs Extracted: {full_text_urls}")
