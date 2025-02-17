@@ -1,3 +1,5 @@
+import os
+import re
 import json
 import logging
 from typing import Optional, Dict, Any
@@ -10,8 +12,61 @@ from datapipeline.core.constants import ELSEVIER_API_KEY
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a string to be used as a safe filename.
+    Removes characters that are not alphanumeric, dash, underscore, or space.
+    Spaces are replaced with underscores.
+    """
+    sanitized = re.sub(r'[\\/*?:"<>|]', "", filename)
+    sanitized = sanitized.strip().replace(" ", "_")
+    return sanitized
+
+
+def write_document_to_file(title: str, document_data: Any, directory: str = "temp"):
+    """
+    Writes the document data to a text file named after the sanitized title.
+    The file is saved in the specified directory.
+    """
+    os.makedirs(directory, exist_ok=True)
+    sanitized_title = sanitize_filename(title)
+    file_path = os.path.join(directory, f"{sanitized_title}.txt")
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            if isinstance(document_data, dict):
+                f.write(json.dumps(document_data, indent=2))
+            else:
+                f.write(str(document_data))
+        logging.info(f"Document saved to: {file_path}")
+    except Exception as e:
+        logging.error(f"Error writing document to file {file_path}: {e}")
+
+
+def filter_unwanted(original_text: str) -> str:
+    """
+    Filters out unwanted tokens from the original text.
+    Removes tokens that start with "http" or contain "amazonaws" or "s3-",
+    as well as tokens that look like filenames (e.g., ending in .pdf, .png, .jpg, .jpeg, .svg).
+    """
+    tokens = original_text.split()
+    filtered_tokens = []
+    # Pattern to detect tokens that look like filenames.
+    file_pattern = re.compile(r'.*\.(pdf|png|jpg|jpeg|svg)$', re.IGNORECASE)
+    for token in tokens:
+        token_lower = token.lower()
+        if token_lower.startswith("http"):
+            continue
+        if "amazonaws" in token_lower or "s3-" in token_lower:
+            continue
+        if file_pattern.match(token):
+            continue
+        filtered_tokens.append(token)
+    return " ".join(filtered_tokens)
+
+
 class ElsevierPaperFetcher:
-    def __init__(self, title_query: str, config: Dict[str, str], use_scopus: bool = True, limit_results: Optional[int] = None):
+    def __init__(self, title_query: str, use_scopus: bool = True, limit_results: Optional[int] = None, api_key = ELSEVIER_API_KEY):
         """
         Initializes the fetcher with a title query and optional result limit.
         
@@ -21,6 +76,11 @@ class ElsevierPaperFetcher:
         - use_scopus (bool): Whether to use Scopus (True) or ScienceDirect (False) for the search.
         - limit_results (int): Optional limit on the number of results to fetch. If None, fetch all.
         """
+        self.config = {
+            "apikey": api_key,
+            "insttoken": None
+        }
+
         logging.debug("Initializing ElsevierPaperFetcher")
         self.title_query = title_query
         self.document: Optional[Dict[str, Any]] = None
@@ -28,12 +88,12 @@ class ElsevierPaperFetcher:
 
         # Initialize the Elsevier client using the provided configuration dictionary.
         logging.debug("Initializing ElsClient with provided API key and insttoken")
-        self.client = ElsClient(config['apikey'])
-        if not config['insttoken']:
+        self.client = ElsClient(self.config['apikey'])
+        if not self.config['insttoken']:
             self.client.inst_token = None
             logging.warning("No insttoken provided, proceeding without it.")
         else:
-            self.client.inst_token = config['insttoken']
+            self.client.inst_token = self.config['insttoken']
         
         # Set search type.
         self.search_type = 'scopus' if use_scopus else 'sciencedirect'
@@ -88,25 +148,17 @@ class ElsevierPaperFetcher:
             # Extract the DOIs and full-text URLs
             doi_list = [entry.get("prism:doi") for entry in all_results if "prism:doi" in entry]
             full_text_urls = self.extract_full_text_urls(all_results)
-            logging.info(f"Extracted DOIs: {doi_list}")
-            logging.info(f"Extracted Full Text URLs: {full_text_urls}")
+            metadata_list = [self.extract_metadata(entry) for entry in all_results]
 
-            # Extract metadata for each result
-            for result in all_results:
-                title = self.extract_title(result)
-                authors = self.extract_authors(result)
-                pub_date = self.extract_pub_date(result)
-                url = self.extract_url(result)
-                logging.info(f"Title: {title}")
-                logging.info(f"Authors: {authors}")
-                logging.info(f"Publication Date: {pub_date}")
-                logging.info(f"URL: {url}")
+            logging.info(f"Elsevier: Extracted DOIs: {doi_list}")
+            logging.info(f"Elsevier: Extracted Full Text URLs: {full_text_urls}")
 
+            return doi_list, full_text_urls, metadata_list
         else:
             logging.warning("No document found matching the title query.")
+            return [], [], []
 
-        return doi_list, full_text_urls
-
+        
     def extract_full_text_urls(self, results: list) -> list:
         """
         Extracts the full-text URLs from the 'link' field where @ref='full-text'.
@@ -115,7 +167,7 @@ class ElsevierPaperFetcher:
         for entry in results:
             # Look for the 'link' field and extract the full-text URL if @ref='full-text'
             for link in entry.get("link", []):
-                if link.get("@ref") == "full-text":
+                if link.get("@href") == "full-text":
                     full_text_urls.append(link.get("@href"))
         return full_text_urls
 
@@ -156,52 +208,84 @@ class ElsevierPaperFetcher:
         return "URL not available"
 
 
-    def fetch_full_document(self, doi: str = None, uri: str = None):
+    def extract_metadata(self, entry: dict) -> Dict[str, Any]:
+        return {
+            "title": entry.get("dc:title", "Title not available"),
+            "doi": entry.get("prism:doi", "DOI not available"),
+            "authors": entry.get("dc:creator", "Authors not available"),
+            "published_date": entry.get("prism:coverDate", "Publication date not available"),
+            "url": entry.get("prism:url", "URL not available")
+        }
+
+
+    def fetch_full_document(self, doi: str = None, uri: str = None) -> Optional[str]:
         """
-        Given a DOI or URI, fetch the full document using the FullDoc class.
+        Fetches the full document using either DOI or URI.
+        It first attempts to fetch using the DOI; if that fails (returns None),
+        and if a URI is provided, it then tries fetching using the URI.
+        Returns the full text (as a string) if available; otherwise, None.
         """
+        result = None
         if doi:
-            logging.debug(f"Fetching full document for DOI: {doi}")
+            logging.debug(f"Fetching full document using DOI: {doi}")
             try:
                 full_doc = FullDoc(doi=doi)
-                if full_doc.read(self.client):  # Fetch full document data from Elsevier
+                if full_doc.read(self.client):
                     logging.info(f"Successfully fetched full document for DOI: {doi}")
-                    print(f"Full content for DOI {doi}:")
-                    print(json.dumps(full_doc.data, indent=2))  # Printing the full content
+                    doc_data = full_doc.data
+                    # Check if 'originalText' exists and is non-empty
+                    if "originalText" in doc_data and doc_data["originalText"].strip():
+                        result = doc_data["originalText"]
+                        result = filter_unwanted(result)
+                    else:
+                        logging.error(f"Full text for DOI {doi} is empty or missing; skipping this document.")
+                        result = None
                 else:
                     logging.warning(f"Failed to fetch full document for DOI: {doi}")
             except Exception as e:
                 logging.error(f"Error fetching full document for DOI {doi}: {e}")
 
-        elif uri:
-            logging.debug(f"Fetching full document for URI: {uri}")
+        if result is None and uri:
+            logging.debug(f"DOI search failed; fetching full document using URI: {uri}")
             try:
                 full_doc = FullDoc(uri=uri)
-                if full_doc.read(self.client):  # Fetch full document data from Elsevier
+                if full_doc.read(self.client):
                     logging.info(f"Successfully fetched full document for URI: {uri}")
-                    print(f"Full content for URI {uri}:")
-                    print(json.dumps(full_doc.data, indent=2))  # Printing the full content
+                    doc_data = full_doc.data
+                    if "originalText" in doc_data and doc_data["originalText"].strip():
+                        result = doc_data["originalText"]
+                        result = filter_unwanted(result)
+                    else:
+                        logging.error(f"Full text for URI {uri} is empty or missing; skipping this document.")
+                        result = None
                 else:
                     logging.warning(f"Failed to fetch full document for URI: {uri}")
             except Exception as e:
                 logging.error(f"Error fetching full document for URI {uri}: {e}")
 
+        return result
+
+
 # Example usage:
 if __name__ == "__main__":
     logging.debug("Starting ElsevierPaperFetcher example.")
     
-    # Define configuration as a dictionary.
-    config_dict = {
-        "apikey": ELSEVIER_API_KEY,
-        "insttoken": None  # Example: you can add your institution token if available
-    }
     
     # Initialize the fetcher with a title query and the config dictionary.
-    fetcher = ElsevierPaperFetcher("Quantum algorithms", config=config_dict, limit_results=5)  # Set a small limit
-    doi_list, full_text_urls = fetcher.fetch_paper()
+    fetcher = ElsevierPaperFetcher("Quantum algorithms", limit_results=5)  # Set a small limit
+    doi_list, full_text_urls, metadata_list = fetcher.fetch_paper()
 
     logging.info(f"DOIs Extracted: {doi_list}")
     logging.info(f"Full Text URLs Extracted: {full_text_urls}")
 
-    for uri in full_text_urls:
-        fetcher.fetch_full_document(uri=uri)
+    # For each entry, attempt to fetch the full document using both DOI and URI.
+    for i in range(len(doi_list)):
+        doi = doi_list[i]
+        uri = full_text_urls[i] if i < len(full_text_urls) else None
+        document_text = fetcher.fetch_full_document(doi=doi, uri=uri)
+        # Use the metadata_list to get the title for naming the file.
+        title = metadata_list[i]["title"] if i < len(metadata_list) else f"document_{i}"
+        if document_text:
+            write_document_to_file(title, document_text, directory="temp")
+        else:
+            logging.info(f"No full document data fetched for entry {i} (DOI: {doi}).")

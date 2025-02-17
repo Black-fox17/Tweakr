@@ -1,12 +1,15 @@
 import logging
 import requests
+from typing import Optional
 import xml.etree.ElementTree as ET
+
+from datapipeline.core.constants import SPRINGER_API_KEY
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class SpringerPaperFetcher:
-    def __init__(self, query: str, api_key: str, limit_results: Optional[int] = None):
+    def __init__(self, query: str, limit_results: Optional[int] = None, api_key = SPRINGER_API_KEY):
         """
         Initializes the fetcher with a query and optional result limit.
 
@@ -62,23 +65,24 @@ class SpringerPaperFetcher:
             logging.warning("No metadata found matching the query.")
             return []
 
-    def fetch_full_text(self, doi: str):
+    def fetch_full_text(self):
         """
         Given a DOI, fetch the full-text article content from Springer.
         """
         logging.debug(f"Fetching full-text content for DOI: {doi}")
 
-        url = f"{self.jats_url}?api_key={self.api_key}&doi={doi}"
+        url = f"{self.jats_url}?api_key={self.api_key}&q={self.query}"
+        all_results = []
         try:
             response = requests.get(url)
             if response.status_code == 200:
                 full_text_data = response.text  # Raw XML response from Springer
                 return self.extract_full_text_url(full_text_data)
             else:
-                logging.warning(f"Failed to fetch full text for DOI: {doi}")
+                logging.warning(f"Failed to fetch full text for DOI: {self.query}")
                 return None
         except Exception as e:
-            logging.error(f"Error fetching full text for DOI {doi}: {e}")
+            logging.error(f"Error fetching full text for DOI {self.query}: {e}")
             return None
 
     def extract_full_text_url(self, xml_data: str):
@@ -153,10 +157,9 @@ if __name__ == "__main__":
     logging.debug("Starting SpringerPaperFetcher example.")
 
     # Define configuration as a dictionary.
-    api_key = "YOUR_API_KEY"  # Replace with your API key from Springer
     query = "quantum energy"
 
-    fetcher = SpringerPaperFetcher(query=query, api_key=api_key, limit_results=5)  # Set a small limit
+    fetcher = SpringerPaperFetcher(query=query, limit_results=5)  # Set a small limit
     articles_metadata = fetcher.fetch_articles()
 
     logging.info(f"Fetched articles metadata: {articles_metadata}")
