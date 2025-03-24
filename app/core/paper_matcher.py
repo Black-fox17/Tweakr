@@ -75,15 +75,20 @@ class PaperKeywordMatcher:
             matching_titles = []
             for paper in papers:
                 if paper.keywords:  # Ensure the paper has keywords
+                    # print(f"Checking Paper: {paper.title}")
                     # Convert the stored keywords string into a set of individual keywords
                     db_keywords = set(
-                        keyword.strip().strip("\"").strip("'")
-                        for keyword in paper.keywords.split(",")
-                    )
+                            keyword.strip().strip("\"'").lower() for keyword in paper.keywords.split(",")
+                        )
+                    # print(f"Database Keywords: {db_keywords}")
 
                     # Compare with extracted keywords
-                    extracted_keywords_set = set(extracted_keywords)
-                    if db_keywords.intersection(extracted_keywords_set):
+                    extracted_keywords_set = {
+                        keyword.strip().strip("\"'").strip("*").lower() for keyword in extracted_keywords
+                    }
+                    # print(f"Extracted Keywords: {extracted_keywords_set}")
+
+                    if db_keywords.intersection({kw.lower() for kw in extracted_keywords_set}):
                         matching_titles.append(paper.title)
 
             return matching_titles

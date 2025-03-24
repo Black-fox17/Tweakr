@@ -21,7 +21,7 @@ from datapipeline.core.springer_paper_fetcher import SpringerPaperFetcher
 from datapipeline.core.mongo_client import MongoDBVectorStoreManager
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.core.retry_with_backoff import retry_with_backoff
-
+import shutil
 
 class PapersPipeline:
     def __init__(self, mongo_uri: str, mongo_db_name: str):

@@ -37,32 +37,32 @@ class CustomFormatter(logging.Formatter):
         return super().format(record)
 
 
-# class S3Handler(RotatingFileHandler):
-#     """
-#     A file handler that compresses rotated logs and uploads them to an S3 bucket.
-#     """
+class S3Handler(RotatingFileHandler):
+    """
+    A file handler that compresses rotated logs and uploads them to an S3 bucket.
+    """
 
-#     def __init__(self, *args, **kwargs):
-#         self.s3_client = s3_client
-#         super().__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        self.s3_client = s3_client
+        super().__init__(*args, **kwargs)
 
-#     def doRollover(self):
-#         super().doRollover()
-#         self.compress_and_upload_to_s3()
+    def doRollover(self):
+        super().doRollover()
+        self.compress_and_upload_to_s3()
 
-#     def compress_and_upload_to_s3(self):
-#         now = datetime.utcnow()
-#         zip_filename = os.path.join(LOG_DIR, f"logs_{now.strftime('%Y%m%d%H%M%S')}.zip")
-#         with zipfile.ZipFile(zip_filename, "w") as zipf:
-#             for root, _, files in os.walk(LOG_DIR):
-#                 for file in files:
-#                     if file.endswith(".log") and not file.endswith(".zip"):
-#                         zipf.write(os.path.join(root, file), arcname=file)
-#         self.upload_to_s3(zip_filename, f"logs/{os.path.basename(zip_filename)}")
-#         os.remove(zip_filename)
+    def compress_and_upload_to_s3(self):
+        now = datetime.utcnow()
+        zip_filename = os.path.join(LOG_DIR, f"logs_{now.strftime('%Y%m%d%H%M%S')}.zip")
+        with zipfile.ZipFile(zip_filename, "w") as zipf:
+            for root, _, files in os.walk(LOG_DIR):
+                for file in files:
+                    if file.endswith(".log") and not file.endswith(".zip"):
+                        zipf.write(os.path.join(root, file), arcname=file)
+        self.upload_to_s3(zip_filename, f"logs/{os.path.basename(zip_filename)}")
+        os.remove(zip_filename)
 
-#     def upload_to_s3(self, file_path, s3_key):
-#         self.s3_client.upload_file(file_path, BUCKET_NAME, s3_key)
+    def upload_to_s3(self, file_path, s3_key):
+        self.s3_client.upload_file(file_path, BUCKET_NAME, s3_key)
 
 
 def remove_old_logs():

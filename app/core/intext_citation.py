@@ -157,24 +157,46 @@ class InTextCitationProcessor:
     def format_citation(self, authors: List[str], year: str) -> str:
         """
         Format in-text citation based on the specified style.
+        For all styles, uses only first name for single authors and first name + et al. for multiple authors.
+        Each citation style's specific formatting conventions are maintained.
         """
         if not authors:
             authors = ["Unknown"]
         if not year or not isinstance(year, str):
             year = "n.d."
+        
+        # Extract first name from the first author
+        first_author = authors[0]
+        if " " in first_author:
+            first_name = first_author.split(" ")[0]
+        else:
+            first_name = first_author
 
         if self.style == "APA":
-            return f"({', '.join(authors)}, {year})"
-        elif self.style == "MLA":
-            if len(authors) > 1:
-                return f"({authors[0]} et al., {year})"
+            # APA: parenthetical citation with comma between author and year
+            if len(authors) == 1:
+                return f"({first_name}, {year})"
             else:
-                return f"({authors[0]}, {year})"
+                return f"({first_name} et al., {year})"
+        
+        elif self.style == "MLA":
+            # MLA: typically includes page numbers but we'll omit them here
+            # No comma between author and year in MLA
+            if len(authors) == 1:
+                return f"({first_name} {year})"
+            else:
+                return f"({first_name} et al. {year})"
+        
         elif self.style == "Chicago":
-            return f"({', '.join(authors)}, {year})"
+            # Chicago: parenthetical citations
+            # No comma between author and year in Chicago author-date system
+            if len(authors) == 1:
+                return f"({first_name} {year})"
+            else:
+                return f"({first_name} et al. {year})"
+        
         else:
             raise ValueError(f"Unsupported citation style: {self.style}")
-
     def find_relevant_papers(self, sentence: str):
         """
         Retrieve semantically relevant papers for a sentence using similarity search,

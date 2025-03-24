@@ -12,25 +12,58 @@ class ReferenceGenerator:
         }
 
     def format_author_list(self, authors: list, style: str) -> str:
+        """Format author list using full names (not abbreviated) for the bibliography/references section."""
         if not authors:
             return ""
+            
         if style == "APA":
-            formatted_authors = [
-                f"{author.split()[-1]}, {' '.join([name[0] + '.' for name in author.split()[:-1]])}"
-                for author in authors
-            ]
+            # Use full names, last name first for first author, then initials for first names
+            formatted_authors = []
+            for author in authors:
+                names = author.split()
+                if len(names) > 1:
+                    # Last name first, then full first name(s)
+                    formatted = f"{names[-1]}, {' '.join(names[:-1])}"
+                else:
+                    formatted = author
+                formatted_authors.append(formatted)
+                
             if len(formatted_authors) > 1:
                 return ", ".join(formatted_authors[:-1]) + f", & {formatted_authors[-1]}"
             return formatted_authors[0]
+            
         elif style == "MLA":
+            # Full names, first author with last name first
+            if len(authors) == 1:
+                names = authors[0].split()
+                if len(names) > 1:
+                    return f"{names[-1]}, {' '.join(names[:-1])}"
+                return authors[0]
+            elif len(authors) == 2:
+                names1 = authors[0].split()
+                if len(names1) > 1:
+                    first_author = f"{names1[-1]}, {' '.join(names1[:-1])}"
+                else:
+                    first_author = authors[0]
+                return f"{first_author}, and {authors[1]}"
+            else:
+                names1 = authors[0].split()
+                if len(names1) > 1:
+                    first_author = f"{names1[-1]}, {' '.join(names1[:-1])}"
+                else:
+                    first_author = authors[0]
+                return f"{first_author}, et al."
+                
+        elif style == "Chicago":
+            # Full names in normal order
             if len(authors) == 1:
                 return authors[0]
             elif len(authors) == 2:
                 return f"{authors[0]} and {authors[1]}"
             else:
                 return f"{authors[0]} et al."
-        elif style == "Chicago":
-            return ", ".join(authors)
+                
+        # Default - just join with commas
         return ", ".join(authors)
 
     def parse_authors(self, authors: str) -> list:
@@ -48,7 +81,13 @@ class ReferenceGenerator:
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
         formatted_authors = self.format_author_list(authors, "APA")
-        reference_text = f"{formatted_authors} ({publication_year}). \"{title}\"."
+        
+        # Add page numbers if available
+        pages = ""
+        if hasattr(paper, "id") and paper.id:
+            pages = f", pp. {paper.id}"
+        
+        reference_text = f"{formatted_authors} ({publication_year}). \"{title}\"{pages}."
         # If a URL exists, return it (otherwise an empty string)
         url = paper.url if hasattr(paper, "url") and paper.url else ""
         return reference_text, url
@@ -58,7 +97,13 @@ class ReferenceGenerator:
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
         formatted_authors = self.format_author_list(authors, "MLA")
-        reference_text = f"{formatted_authors}. \"{title}.\", {publication_year}."
+        
+        # Add page numbers if available
+        pages = ""
+        if hasattr(paper, "pages") and paper.pages:
+            pages = f", pp. {paper.pages}"
+        
+        reference_text = f"{formatted_authors}. \"{title}.\"{pages}, {publication_year}."
         url = paper.url if hasattr(paper, "url") and paper.url else ""
         return reference_text, url
 
@@ -67,7 +112,13 @@ class ReferenceGenerator:
         pub_date = paper.pub_date
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
         formatted_authors = self.format_author_list(authors, "Chicago")
-        reference_text = f"{formatted_authors}. \"{title}\"., {publication_year}."
+        
+        # Add page numbers if available
+        pages = ""
+        if hasattr(paper, "pages") and paper.pages:
+            pages = f", {paper.pages}"
+        
+        reference_text = f"{formatted_authors}. \"{title}\"{pages}. {publication_year}."
         url = paper.url if hasattr(paper, "url") and paper.url else ""
         return reference_text, url
 

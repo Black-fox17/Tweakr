@@ -5,11 +5,11 @@ import logging
 from app.core.logging_config import setup_logging
 
 
-setup_logging(
-    log_level=logging.DEBUG,
-)
+# setup_logging(
+#     log_level=logging.DEBUG,
+# )
 
-logger = logging.getLogger()  # Get the root logger
+# logger = logging.getLogger()  # Get the root logger
 
 
 def configure_logfire():
@@ -34,4 +34,4 @@ def request_attributes_mapper(request, attributes):
 monitoring = configure_logfire()
 
 
-logger.addHandler(monitoring.LogfireLoggingHandler())
+# logger.addHandler(monitoring.LogfireLoggingHandler())
