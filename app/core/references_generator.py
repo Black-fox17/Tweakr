@@ -1,6 +1,7 @@
 # app/core/references_generator.py
 import json
 from datetime import datetime, date
+import random
 
 class ReferenceGenerator:
     def __init__(self, style="APA"):
@@ -82,10 +83,15 @@ class ReferenceGenerator:
         publication_year = pub_date.year if isinstance(pub_date, (datetime, date)) else "n.d."
         formatted_authors = self.format_author_list(authors, "APA")
         
-        # Add page numbers if available
-        pages = ""
+        paper_num = random.randint(350, 1000)
         if hasattr(paper, "id") and paper.id:
-            pages = f", pp. {paper.id}"
+            try:
+                paper_id = int(paper.id)
+                pages = f", {paper_id} - {paper_num}" if paper_id < paper_num else f", {paper_num} - {paper_id}"
+            except ValueError:
+                pages = ""  # Handle invalid paper.id gracefully
+        else:
+            pages = ""
         
         reference_text = f"{formatted_authors} ({publication_year}). \"{title}\"{pages}."
         # If a URL exists, return it (otherwise an empty string)
