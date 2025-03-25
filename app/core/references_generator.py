@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, date
 import random
+from sqlalchemy import or_
 
 class ReferenceGenerator:
     def __init__(self, style="APA"):
@@ -128,17 +129,32 @@ class ReferenceGenerator:
         url = paper.url if hasattr(paper, "url") and paper.url else ""
         return reference_text, url
 
+
+
     def generate_references(self, matching_titles: list, category: str) -> list:
         references = []
         from datapipeline.core.database import get_session_with_ctx_manager
         from datapipeline.models.papers import Papers
+
         with get_session_with_ctx_manager() as session:
             for title in matching_titles:
-                paper = (
-                    session.query(Papers)
-                    .filter(Papers.title == title, Papers.category == category)
-                    .first()
-                )
+                # Adjust filter for corporate_governance to include governance
+                if category == "corporate_governance":
+                    paper = (
+                        session.query(Papers)
+                        .filter(
+                            Papers.title == title,
+                            or_(Papers.category == "corporate_governance", Papers.category == "governance")
+                        )
+                        .first()
+                    )
+                else:
+                    paper = (
+                        session.query(Papers)
+                        .filter(Papers.title == title, Papers.category == category)
+                        .first()
+                    )
+
                 if paper:
                     authors = self.parse_authors(paper.authors)
                     reference_func = self.styles.get(self.style)
@@ -147,4 +163,5 @@ class ReferenceGenerator:
                         references.append(reference_func(paper, authors))
                     else:
                         raise ValueError(f"Unsupported reference style: {self.style}")
+
         return references

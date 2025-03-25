@@ -317,7 +317,7 @@ class MongoDBVectorStoreManager:
                 relevance_score_fn="cosine",
             )
 
-            logger.info("Initializing MongoDB Atlas Hybrid Search Retriever...")
+            
             search_index_name = f"{self.collection_name}_search_index"
             retriever = MongoDBAtlasHybridSearchRetriever(
                 vectorstore=vector_store,
@@ -327,7 +327,7 @@ class MongoDBVectorStoreManager:
                 vector_penalty=vector_penalty,
             )
 
-            logger.info(f"Performing hybrid search with query_text: {query_text}")
+            
             documents = retriever.invoke(query_text)
             logger.info(f"Retrieved {len(documents)} documents.")
 
@@ -347,15 +347,15 @@ class MongoDBVectorStoreManager:
         pass
 
 
-if __name__ == "__main__":
-    mongo = MongoDBVectorStoreManager()
-    try:
-        results = mongo.semantic_search(
-            "quantum_physics",
-            query_text="Advances in modern physics and technology have spurred great interest in the study of symmetry and topology in condensed matter physics",
-            top_k=3,
-        )
-        for r in results:
-            print("Title:", r.metadata["title"], "Score:", r.metadata["score"])
-    except Exception as e:
-        print(f"Error during semantic search: {e}")
+# if __name__ == "__main__":
+#     mongo = MongoDBVectorStoreManager()
+#     try:
+#         results = mongo.semantic_search(
+#             "quantum_physics",
+#             query_text="Advances in modern physics and technology have spurred great interest in the study of symmetry and topology in condensed matter physics",
+#             top_k=3,
+#         )
+#         for r in results:
+#             print("Title:", r.metadata["title"], "Score:", r.metadata["score"])
+#     except Exception as e:
+#         print(f"Error during semantic search: {e}")
