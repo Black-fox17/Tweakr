@@ -316,9 +316,12 @@ class InTextCitationProcessor:
                         citation = self.format_citation(authors, year)
                         citation_texts.append(citation)
 
-                    # Append the citations to the sentence if available
+                    # Modify the sentence to insert citations before the full stop
                     if citation_texts:
-                        sentence_text += " " + " ".join(citation_texts)
+                        # Remove the full stop
+                        base_sentence = sentence_text.rstrip('.')
+                        # Insert citations before the full stop
+                        sentence_text = f"{base_sentence} {' '.join(citation_texts)}."
 
                 except Exception as e:
                     logging.error(f"Error processing sentence '{sentence_text}' in paragraph {para_idx}: {e}")
