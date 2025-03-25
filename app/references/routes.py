@@ -8,8 +8,24 @@ from app.core.references_generator import ReferenceGenerator
 from app.core.intext_citation import InTextCitationProcessor
 from app.core.paper_matcher import PaperKeywordMatcher
 from app.auth.helpers import get_current_active_user
-
+from app.core.wordcount import count_words_in_docx
 router = APIRouter()
+
+@router.post("/char-count")
+async def char_count(file: UploadFile = File(...),):
+    """
+    Route to count the number of characters in a given text.
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+        temp_file_path = temp_file.name
+        # Save the uploaded file to the temporary file
+        temp_file.write(await file.read())
+    try:
+        result = count_words_in_docx(temp_file_path)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @router.post("/process-paper/")
 async def process_paper(
