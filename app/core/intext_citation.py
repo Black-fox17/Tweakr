@@ -14,6 +14,9 @@ from app.core.hyperlink_helper import add_hyperlink
 from app.core.headings import headers  # Import the headings
 import spacy
 import logging
+import uuid
+import json
+from typing import List, Dict, Any
 
 # Load SpaCy model for sentence segmentation
 nlp = spacy.load("en_core_web_sm")
@@ -343,4 +346,216 @@ class InTextCitationProcessor:
 
         doc.save(output_path)
         logging.info(f"Processed document saved at: '{output_path}'")
+        return output_path
+    
+    def prepare_citations_for_review(self, input_path: str) -> Dict[str, Any]:
+        """
+        Prepare in-text citations for frontend review with unique identifiers.
+
+        Parameters:
+        - input_path (str): Path to the input document.
+
+        Returns:
+        - Dict containing document-level and citation-level information for review.
+        """
+        logging.info(f"Preparing citations for review from file: '{input_path}'")
+
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Input file '{input_path}' does not exist.")
+
+        try:
+            # Open the document from the temporary file path
+            doc = Document(input_path)
+            
+            # Diagnostic logging for document structure
+            logging.info(f"Document paragraphs count: {len(doc.paragraphs)}")
+            
+            # Prepare citation review data
+            citation_review_data = {
+                "document_id": str(uuid.uuid4()),
+                "total_citations": 0,
+                "citations": [],
+                "diagnostics": {
+                    "processed_paragraphs": 0,
+                    "processed_sentences": 0,
+                    "skipped_paragraphs": [],
+                    "empty_sentences": []
+                }
+            }
+
+            for para_idx, para in enumerate(doc.paragraphs, start=1):
+                paragraph_text = para.text.strip()
+
+                # Diagnostic logging for paragraph content
+                logging.debug(f"Paragraph {para_idx} text: '{paragraph_text}'")
+
+                if not paragraph_text:
+                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(para_idx)
+                    continue
+
+                if self.is_dynamic_heading(para):
+                    logging.info(f"Skipping heading paragraph: '{paragraph_text}'")
+                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(para_idx)
+                    continue
+
+                # Increment processed paragraphs
+                citation_review_data["diagnostics"]["processed_paragraphs"] += 1
+
+                # Tokenize paragraph into sentences
+                try:
+                    sentences = list(self.nlp(paragraph_text).sents)
+                except Exception as tokenize_error:
+                    logging.error(f"Error tokenizing paragraph {para_idx}: {tokenize_error}")
+                    continue
+
+                for sent_idx, sent in enumerate(sentences, start=1):
+                    sentence_text = sent.text.strip()
+
+                    # Track processed sentences
+                    citation_review_data["diagnostics"]["processed_sentences"] += 1
+
+                    if not sentence_text:
+                        citation_review_data["diagnostics"]["empty_sentences"].append({
+                            "paragraph": para_idx,
+                            "sentence_index": sent_idx
+                        })
+                        continue
+
+                    try:
+                        # Diagnostic logging for semantic search
+                        logging.debug(f"Performing semantic search for sentence: '{sentence_text}'")
+                        
+                        relevant_papers = self.find_relevant_papers(sentence_text)
+                        
+                        # Log semantic search results
+                        logging.debug(f"Semantic search for sentence returned {len(relevant_papers)} papers")
+
+                        if not relevant_papers:
+                            logging.debug(f"No relevant papers found for sentence: '{sentence_text}'")
+                            continue
+
+                        # Prepare citations for each relevant paper
+                        for paper_doc in relevant_papers:
+                            metadata = paper_doc.metadata
+                            title = metadata.get("title")
+                            
+                            if not title:
+                                logging.error("Missing 'title' in paper metadata. Skipping this paper.")
+                                continue
+
+                            # Fetch additional metadata
+                            db_metadata = self.fetch_metadata_from_db(title)
+                            authors = db_metadata.get("authors", ["Unknown"])
+                            year = db_metadata.get("published_date", "n.d.")
+
+                            # Prepare citation details
+                            citation_id = str(uuid.uuid4())
+                            citation_entry = {
+                                "id": citation_id,
+                                "original_sentence": sentence_text,
+                                "paper_details": {
+                                    "title": title,
+                                    "authors": authors,
+                                    "year": year,
+                                    "url": metadata.get("url", ""),
+                                    "doi": metadata.get("doi", "")
+                                },
+                                "status": "pending_review",
+                                "metadata": {
+                                    "paragraph_index": para_idx,
+                                    "sentence_index": sent_idx
+                                }
+                            }
+
+                            citation_review_data["citations"].append(citation_entry)
+                            citation_review_data["total_citations"] += 1
+
+                    except Exception as e:
+                        logging.error(f"Error processing sentence '{sentence_text}': {e}")
+
+            # Log final diagnostic information
+            logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
+            logging.info(f"Diagnostics: {json.dumps(citation_review_data['diagnostics'], indent=2)}")
+
+            return citation_review_data
+
+        except Exception as e:
+            logging.error(f"Error processing document: {e}")
+            raise
+
+    def update_document_with_reviewed_citations(self, 
+                                                input_path: str, 
+                                                output_path: str, 
+                                                reviewed_citations: List[Dict[str, Any]]) -> str:
+        """
+        Update the document based on reviewed citations.
+
+        Parameters:
+        - input_path (str): Path to the input document.
+        - output_path (str): Path to save the updated document.
+        - reviewed_citations (List[Dict]): List of citations with their review status.
+
+        Returns:
+        - Path to the updated document.
+        """
+        logging.info(f"Updating document with reviewed citations")
+
+        # Load the original document
+        doc = Document(input_path)
+
+        # Create a mapping of accepted citations
+        accepted_citations = {
+            citation['id']: self.format_citation(
+                citation['paper_details']['authors'], 
+                citation['paper_details']['year']
+            )
+            for citation in reviewed_citations 
+            if citation.get('status') == 'accepted'
+        }
+
+        # Process paragraphs
+        for para_idx, para in enumerate(doc.paragraphs):
+            paragraph_text = para.text.strip()
+
+            if not paragraph_text or self.is_dynamic_heading(para):
+                continue
+
+            # Tokenize paragraph into sentences
+            sentences = list(self.nlp(paragraph_text).sents)
+            processed_sentences = []
+
+            for sent_idx, sent in enumerate(sentences, start=1):
+                sentence_text = sent.text.strip()
+
+                # Check if this sentence has any reviewed citations
+                sentence_citations = [
+                    citation for citation in reviewed_citations 
+                    if (citation['metadata']['paragraph_index'] == para_idx + 1 and 
+                        citation['metadata']['sentence_index'] == sent_idx)
+                ]
+
+                if sentence_citations:
+                    # Remove the period from the sentence
+                    base_sentence = sentence_text.rstrip('.')
+                    
+                    # Add accepted citations
+                    accepted_cites = [
+                        accepted_citations[cite['id']] 
+                        for cite in sentence_citations 
+                        if cite['status'] == 'accepted'
+                    ]
+
+                    if accepted_cites:
+                        sentence_text = f"{base_sentence} {' '.join(accepted_cites)}."
+                
+                processed_sentences.append(sentence_text)
+
+            # Reconstruct the paragraph
+            final_paragraph_text = " ".join(processed_sentences)
+            doc.paragraphs[para_idx].text = final_paragraph_text
+
+        # Save the updated document
+        doc.save(output_path)
+        logging.info(f"Updated document saved at: '{output_path}'")
+
         return output_path
