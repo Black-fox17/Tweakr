@@ -14,5 +14,5 @@ export PYTHONPATH="$APP_DIR:$DATAPIPELINE_DIR:$APPSEC_DIR:$PYTHONPATH"
 # Print the PYTHONPATH for debugging
 echo "PYTHONPATH set to: $PYTHONPATH"
 
-# Start streamlit server
-exec "$@"
+# Start Streamlit server
+streamlit run datapipeline/streamlit_app.py --server.port 5000 --server.address 0.0.0.0
