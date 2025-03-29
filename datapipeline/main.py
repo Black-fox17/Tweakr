@@ -412,4 +412,4 @@ if __name__ == "__main__":
         mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
         mongo_db_name=MONGO_DB_NAME,
     )
-    pipeline.process_papers(query="Breast Cancer", category="Cancer", download_dir="./store", batch_size=6, sources=["elsevier", "springer"])
+    pipeline.process_papers(query="delegated healthcare tasks AND professional role scope", category="healthcare_management", download_dir="./store", batch_size=6, sources=["elsevier", "springer"])
