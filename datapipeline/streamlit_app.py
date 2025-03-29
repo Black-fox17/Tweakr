@@ -9,7 +9,9 @@ import random
 from datapipeline.main import PapersPipeline
 from streamlit_autorefresh import st_autorefresh
 from datapipeline.core.constants import MONGO_DB_NAME, MONGODB_ATLAS_CLUSTER_URI
+from dotenv import load_dotenv
 import sys
+load_dotenv()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Create a mock class for testing if needed
