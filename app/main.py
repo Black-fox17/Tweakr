@@ -9,9 +9,10 @@ from fastapi.openapi.utils import get_openapi
 from scalar_fastapi import get_scalar_api_reference
 
 
-from app.monitoring.services import request_attributes_mapper, monitoring
+# from app.monitoring.services import request_attributes_mapper, monitoring
 from app.auth.routes import router as auth_router
 from app.references.routes import router as references_router
+from datapipeline.routes import app as datapipeline_router
 
 
 def custom_openapi():
@@ -33,8 +34,8 @@ def custom_openapi():
 
 app = FastAPI()
 
-monitoring.instrument_fastapi(app, request_attributes_mapper=request_attributes_mapper)
-monitoring.instrument_system_metrics()
+# monitoring.instrument_fastapi(app, request_attributes_mapper=request_attributes_mapper)
+# monitoring.instrument_system_metrics()
 
 app.openapi = custom_openapi
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/verify-code/")
@@ -72,6 +73,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
 app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
+app.include_router(datapipeline_router, prefix="/datapipeline", tags=['DATAPIPELINE'])
 
 
 if __name__ == "__main__":
