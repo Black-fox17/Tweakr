@@ -12,18 +12,24 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create .streamlit directory
+RUN mkdir -p .streamlit
+
+# Copy Streamlit config first
+COPY .streamlit/config.toml .streamlit/
+
 # Copy the rest of the application
 COPY . .
-
-# Create .streamlit directory if it doesn't exist
-RUN mkdir -p .streamlit
 
 # Set environment variables
 ENV PYTHONPATH=/code:/code/datapipeline:/code/app
 ENV PORT=5000
+ENV STREAMLIT_SERVER_PORT=5000
+ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 # Expose the port
 EXPOSE 5000
 
 # Command to run the application
-CMD ["streamlit", "run", "app/main.py", "--server.port=5000", "--server.address=0.0.0.0"] 
+CMD ["streamlit", "run", "app/main.py", "--server.port=5000", "--server.address=0.0.0.0", "--browser.serverAddress=0.0.0.0", "--browser.serverPort=5000"] 

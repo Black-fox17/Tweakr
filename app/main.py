@@ -1,16 +1,21 @@
 import streamlit as st
 import os
+import sys
+from dotenv import load_dotenv
 from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
 from datapipeline.main import PapersPipeline
 
-# Set page config
+# Load environment variables
+load_dotenv()
+
+# Set Streamlit configuration
 st.set_page_config(
     page_title="Tweakr - Academic Paper Search",
     page_icon="📚",
     layout="wide"
 )
 
-# Add a simple health check endpoint
+# Health check endpoint
 if os.environ.get('KOYEB_HEALTH_CHECK') == 'true':
     st.write("OK")
     st.stop()
@@ -21,7 +26,8 @@ pipeline = PapersPipeline(
     mongo_db_name=MONGO_DB_NAME,
 )
 
-# Rest of your Streamlit app code... 
+# Rest of your Streamlit app code...
+
 import os
 import streamlit as st
 

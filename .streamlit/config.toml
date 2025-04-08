@@ -3,6 +3,10 @@ port = 5000
 address = "0.0.0.0"
 enableCORS = false
 enableXsrfProtection = true
+maxUploadSize = 200
+maxMessageSize = 200
 
 [browser]
-gatherUsageStats = false 
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = 5000 

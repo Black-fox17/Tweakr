@@ -8,8 +8,7 @@ service:
     - path: /
       protocol: http
   healthcheck:
-    http:
-      path: /
+    tcp:
       port: 5000
       interval: 30s
       timeout: 5s
@@ -20,6 +19,12 @@ service:
       value: "true"
     - name: PORT
       value: "5000"
+    - name: STREAMLIT_SERVER_PORT
+      value: "5000"
+    - name: STREAMLIT_SERVER_ADDRESS
+      value: "0.0.0.0"
+    - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+      value: "false"
   scaling:
     min: 1
     max: 1
