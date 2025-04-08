@@ -10,8 +10,6 @@ from scalar_fastapi import get_scalar_api_reference
 
 
 # from app.monitoring.services import request_attributes_mapper, monitoring
-from app.auth.routes import router as auth_router
-from app.references.routes import router as references_router
 from datapipeline.routes import app as datapipeline_router
 
 
@@ -71,8 +69,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
-app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
+# app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
+# app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
 app.include_router(datapipeline_router, prefix="/datapipeline", tags=['DATAPIPELINE'])
 
 
