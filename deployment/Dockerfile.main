@@ -44,7 +44,7 @@ COPY ./scripts /code/scripts
 
 
 # Expose any required port (if necessary)
-EXPOSE 5000
+EXPOSE 8501
 
 # Copy the streamlit script into the Docker image
 RUN chmod +x /code/scripts/streamlit.sh
@@ -54,4 +54,3 @@ ENTRYPOINT ["/code/scripts/streamlit.sh"]
 
 
 CMD ["sh", "-c", "python -m streamlit run /code/app/streamlit_app.py ${PORT:+--server.port=$PORT} --server.address=0.0.0.0"]
-
