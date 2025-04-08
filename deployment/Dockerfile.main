@@ -44,7 +44,7 @@ COPY ./scripts /code/scripts
 
 
 # Expose any required port (if necessary)
-EXPOSE 8501
+EXPOSE 5000
 
 # Copy the streamlit script into the Docker image
 RUN chmod +x /code/scripts/streamlit.sh
