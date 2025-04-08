@@ -15,7 +15,7 @@ import axios from 'axios';
 import academic from '../academic.svg';
 
 // API base URL - update this to your FastAPI server address
-const API_BASE_URL = 'http://localhost:8000/datapipeline';
+const API_BASE_URL = 'https://tweakr.onrender.com/datapipeline';
 
 // Types
 interface Log {
