@@ -12,6 +12,7 @@ import {
   Server
 } from 'lucide-react';
 import axios from 'axios';
+import academic from '../academic.svg';
 
 // API base URL - update this to your FastAPI server address
 const API_BASE_URL = 'http://localhost:8000/datapipeline';
@@ -155,7 +156,7 @@ function App() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <BookOpen className="h-8 w-8 text-blue-600" />
+            <img src={academic} alt="Academic" className="h-8 w-8" />
             <h1 className="text-2xl font-bold text-gray-900">Academic Paper Processing Pipeline</h1>
           </div>
           <div className="text-sm text-gray-500">© 2025</div>
