@@ -24,16 +24,33 @@ class MongoDBVectorStoreManager:
         - connection_string (str): MongoDB connection URI.
         - db_name (str): Name of the database.
         """
-        self.client = MongoClient(connection_string)
-        self.db = self.client[db_name]
+        try:
+            logging.info(f"Connecting to MongoDB with URI: {connection_string[:20]}... (truncated)")
+            self.client = MongoClient(connection_string)
+            self.db = self.client[db_name]
+            logging.info(f"Connected to MongoDB database: {db_name}")
+            
+            # Test the connection
+            self.client.server_info()
+            logging.info("MongoDB connection test successful")
+        except Exception as e:
+            logging.error(f"Failed to connect to MongoDB: {e}")
+            raise
 
 
     def document_exists(self, collection_name: str, title: str) -> bool:
         """
         Check if a document with the given title exists in the specified MongoDB collection.
         """
-        collection = self.get_or_create_collection(collection_name)
-        return collection.find_one({"metadata.title": title}) is not None
+        try:
+            collection = self.get_or_create_collection(collection_name)
+            result = collection.find_one({"metadata.title": title})
+            exists = result is not None
+            logging.info(f"Document '{title}' exists in collection '{collection_name}': {exists}")
+            return exists
+        except Exception as e:
+            logging.error(f"Error checking if document exists: {e}")
+            return False
 
 
     def get_or_create_collection(self, collection_name: str):
@@ -46,9 +63,17 @@ class MongoDBVectorStoreManager:
         Returns:
         - Collection: The MongoDB collection object.
         """
-        if collection_name not in self.db.list_collection_names():
-            self.db.create_collection(collection_name)
-        return self.db[collection_name]
+        try:
+            if collection_name not in self.db.list_collection_names():
+                logging.info(f"Collection '{collection_name}' does not exist. Creating it...")
+                self.db.create_collection(collection_name)
+                logging.info(f"Collection '{collection_name}' created successfully")
+            else:
+                logging.info(f"Collection '{collection_name}' already exists")
+            return self.db[collection_name]
+        except Exception as e:
+            logging.error(f"Error getting or creating collection '{collection_name}': {e}")
+            raise
 
 
     def store_document(self, collection_name: str, document: Document):
@@ -59,20 +84,39 @@ class MongoDBVectorStoreManager:
         - collection_name (str): Name of the collection.
         - document (Document): The document to store.
         """
-        collection = self.get_or_create_collection(collection_name)
-
-        # Store Document
         try:
-            logging.info("Storing document in vector store...")
-            vector_store = MongoDBAtlasVectorSearch(
-                collection=collection,
-                embedding=embeddings_model,
-                relevance_score_fn="cosine"
-            )
-            vector_store.add_documents([document])
-            logging.info(f"Document '{document.metadata['title']}' stored successfully.")
+            collection = self.get_or_create_collection(collection_name)
+            logging.info(f"Storing document '{document.metadata['title']}' in collection '{collection_name}'...")
+
+            # Store Document
+            try:
+                logging.info("Creating vector store...")
+                vector_store = MongoDBAtlasVectorSearch(
+                    collection=collection,
+                    embedding=embeddings_model,
+                    relevance_score_fn="cosine"
+                )
+                logging.info("Adding document to vector store...")
+                vector_store.add_documents([document])
+                logging.info(f"Document '{document.metadata['title']}' stored successfully.")
+            except Exception as e:
+                logging.error(f"Error storing document in vector store: {e}")
+                # Try a direct insert as a fallback
+                try:
+                    logging.info("Attempting direct document insert as fallback...")
+                    # Create a simple document structure
+                    doc_data = {
+                        "metadata": document.metadata,
+                        "page_content": document.page_content
+                    }
+                    collection.insert_one(doc_data)
+                    logging.info(f"Document '{document.metadata['title']}' inserted directly as fallback.")
+                except Exception as fallback_error:
+                    logging.error(f"Fallback insert also failed: {fallback_error}")
+                    raise
         except Exception as e:
-            logging.error(f"Error storing document in vector store: {e}")
+            logging.error(f"Error in store_document: {e}")
+            raise
 
     
     # def create_indexes(self, collection_name: str):

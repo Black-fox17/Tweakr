@@ -18,7 +18,7 @@ class ProcessPapersRequest(BaseModel):
     category: str
     batch_size: int = 20
     download_dir: str = "./store"
-    sources: List[str] = ["arxiv", "elsevier", "springer"]
+    sources: List[str] = ["arxiv", "elsevier", "springer", "pubmed", "ieee", "acm"]
 
 class ProcessPapersResponse(BaseModel):
     status: str
@@ -75,124 +75,6 @@ def update_stats(job_id: str, **kwargs):
         if key in job_stats[job_id]:
             job_stats[job_id][key] = value
 
-class CustomPapersPipeline(PapersPipeline):
-    """Extended PapersPipeline with logging capabilities"""
-    
-    def __init__(self, mongo_uri: str, mongo_db_name: str, job_id: str):
-        super().__init__(mongo_uri=mongo_uri, mongo_db_name=mongo_db_name)
-        self.job_id = job_id
-        self.papers_processed = 0
-    
-    def save_paper_metadata(self, session, paper_data: dict):
-        """Override to add logging"""
-        try:
-            existing_paper = session.query(Papers).filter_by(title=paper_data['title']).first()
-            
-            if existing_paper:
-                add_log(self.job_id, f"Paper '{existing_paper.title}' already exists in the database.", "existing")
-                
-                if not existing_paper.keywords and paper_data.get('keywords'):
-                    existing_paper.keywords = paper_data['keywords']
-                    session.commit()
-                    add_log(self.job_id, f"Updated keywords for paper: {existing_paper.title}", "success")
-                
-                if not existing_paper.url and paper_data.get('url'):
-                    existing_paper.url = paper_data['url']
-                    session.commit()
-                    add_log(self.job_id, f"Updated url for paper: {existing_paper.title}", "success")
-                
-                if not existing_paper.authors and paper_data.get('authors'):
-                    existing_paper.authors = paper_data['authors']
-                    session.commit()
-                    add_log(self.job_id, f"Updated authors for paper: {existing_paper.title}", "success")
-                
-                return
-            
-            else:
-                paper = Papers(
-                    title=paper_data['title'],
-                    category=paper_data['category'],
-                    pub_date=paper_data['published_date'],
-                    authors=paper_data['authors'],
-                    url=paper_data['url'],
-                    collection_name=paper_data['collection_name'],
-                    keywords=paper_data.get('keywords', []),
-                    is_processed=paper_data.get('is_processed', False)
-                )
-                session.add(paper)
-                session.commit()
-                add_log(self.job_id, f"Added new paper: {paper.title}", "success")
-                self.papers_processed += 1
-                update_stats(self.job_id, papersProcessed=self.papers_processed)
-        
-        except Exception as e:
-            session.rollback()
-            add_log(self.job_id, f"Error saving paper metadata: {str(e)}", "error")
-
-    def process_papers(self, query: str, category: str, batch_size: int = 100, download_dir: str = './store', sources: Optional[List[str]] = None):
-        """Override to add logging and progress tracking"""
-        if sources is None:
-            sources = ["arxiv", "elsevier", "springer"]
-        
-        add_log(self.job_id, f"Starting paper processing for query: '{query}' from sources: {sources}", "info")
-        update_stats(
-            self.job_id, 
-            totalSources=len(sources),
-            batchSize=batch_size,
-            isProcessing=True
-        )
-        
-        source_count = len(sources)
-        current_source_index = 0
-        
-        for source in sources:
-            current_source_index += 1
-            add_log(self.job_id, f"Processing source {current_source_index}/{source_count}: {source}", "info")
-            
-            # Call the parent implementation but with progress tracking
-            try:
-                if source.lower() == "arxiv":
-                    # Specific Arxiv processing with logging
-                    add_log(self.job_id, f"Searching arXiv for papers matching '{query}'", "processing")
-                    self.clean_download_directory(download_dir)
-                    
-                    # Initialize the downloader with the current batch
-                    from datapipeline.core.download_arxiv_paper import ArxivPaperDownloader
-                    downloader = ArxivPaperDownloader(query=query, max_results=batch_size, download_dir=download_dir)
-                    downloaded_papers = downloader.download_papers()
-                    
-                    if not downloaded_papers:
-                        add_log(self.job_id, "No papers found in arXiv matching the query.", "info")
-                    else:
-                        add_log(self.job_id, f"Found {len(downloaded_papers)} papers in arXiv.", "info")
-                    
-                    # Process each paper with detailed logging
-                    for i, paper in enumerate(downloaded_papers):
-                        progress = (current_source_index - 1 + (i+1)/len(downloaded_papers)) / source_count
-                        update_stats(self.job_id, progress=progress)
-                        add_log(self.job_id, f"Processing paper {i+1}/{len(downloaded_papers)}: {paper['title']}", "processing")
-                        
-                        # Continue with normal processing...
-                        # Note: The actual paper processing code is in the parent class
-                
-                elif source.lower() == "elsevier":
-                    add_log(self.job_id, f"Searching Elsevier for papers matching '{query}'", "processing")
-                    # Elsevier specific processing with logging...
-                
-                elif source.lower() == "springer":
-                    add_log(self.job_id, f"Searching Springer for papers matching '{query}'", "processing")
-                    # Springer specific processing with logging...
-                
-                # Update progress for this source
-                update_stats(self.job_id, progress=(current_source_index/source_count))
-            
-            except Exception as e:
-                add_log(self.job_id, f"Error processing source {source}: {str(e)}", "error")
-        
-        # Call parent implementation with logging wrapped around it
-        add_log(self.job_id, "Finished processing all sources", "success")
-        update_stats(self.job_id, isProcessing=False, progress=1.0)
-
 def process_papers_task(
     job_id: str, 
     query: str, 
@@ -231,7 +113,7 @@ def process_papers_task(
         timer_thread.start()
         
         # Initialize the pipeline with logging
-        pipeline = CustomPapersPipeline(
+        pipeline = PapersPipeline(
             mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
             mongo_db_name=MONGO_DB_NAME,
             job_id=job_id
@@ -330,4 +212,4 @@ async def get_available_sources():
     """
     Endpoint to get the list of available paper sources.
     """
-    return ["arxiv", "elsevier", "springer"]
+    return ["arxiv", "elsevier", "springer", "pubmed", "ieee", "acm"]

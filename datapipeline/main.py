@@ -24,7 +24,7 @@ from datapipeline.core.retry_with_backoff import retry_with_backoff
 import shutil
 
 class PapersPipeline:
-    def __init__(self, mongo_uri: str, mongo_db_name: str):
+    def __init__(self, mongo_uri: str, mongo_db_name: str, job_id: Optional[str] = None):
         # Setup MongoDB manager
         self.mongo_manager = MongoDBVectorStoreManager(connection_string=mongo_uri, db_name=mongo_db_name)
         self.llm = ChatGoogleGenerativeAI(
@@ -47,8 +47,30 @@ class PapersPipeline:
                 ("human", "Here is the academic text:\n\n{text}\n\nPlease provide a list of keywords extracted from this text."),
             ]
         )
+        
+        # Store job_id for logging
+        self.job_id = job_id
+        self.papers_processed = 0
+        self.total_sources = 0
+        self.current_source = ""
+        self.current_progress = 0.0
 
+    def log(self, message: str, log_type: str = "info"):
+        """Log a message if job_id is provided"""
+        if self.job_id:
+            from datapipeline.routes import add_log
+            add_log(self.job_id, message, log_type)
+        else:
+            print(f"[{log_type.upper()}] {message}")
 
+    def update_stats(self, **kwargs):
+        """Update job statistics if job_id is provided"""
+        if self.job_id:
+            from datapipeline.routes import update_stats
+            update_stats(self.job_id, **kwargs)
+        else:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
     def extract_keywords(self, content: str) -> list:
         """
@@ -61,7 +83,7 @@ class PapersPipeline:
 
             # Call the fetch_response function with retry logic
             response = retry_with_backoff(fetch_response)
-            print("Raw Response: ", response)
+            self.log(f"Raw Response: {response}", "info")
 
             # Check if the response is a dictionary and extract the "content" field
             if isinstance(response, dict) and "content" in response:
@@ -88,14 +110,12 @@ class PapersPipeline:
                 ):
                     keywords.append(cleaned_keyword)
 
-            print("Extracted Keywords: ", keywords)
+            self.log(f"Extracted Keywords: {keywords}", "info")
             return keywords
 
         except Exception as e:
-            print(f"Error extracting keywords: {e}")
+            self.log(f"Error extracting keywords: {e}", "error")
             return []
-
-
 
     def clean_download_directory(self, download_dir: str):
         """
@@ -113,10 +133,9 @@ class PapersPipeline:
                     elif os.path.isdir(file_path):
                         shutil.rmtree(file_path)
                 except Exception as e:
-                    print(f"Failed to delete {file_path}. Reason: {e}")
+                    self.log(f"Failed to delete {file_path}. Reason: {e}", "error")
         else:
             os.makedirs(download_dir)
-
 
     def save_paper_metadata(self, session: Session, paper_data: dict):
         """
@@ -128,25 +147,25 @@ class PapersPipeline:
             existing_paper = session.query(Papers).filter_by(title=paper_data['title']).first()
 
             if existing_paper:
-                print(f"Paper '{existing_paper.title}' already exists in the database.")
+                self.log(f"Paper '{existing_paper.title}' already exists in the database.", "existing")
 
                 # Update keywords if they are empty or None
                 if not existing_paper.keywords and paper_data.get('keywords'):
                     existing_paper.keywords = paper_data['keywords']
                     session.commit()
-                    print(f"Updated keywords for paper: {existing_paper.title}")
+                    self.log(f"Updated keywords for paper: {existing_paper.title}", "success")
 
                 # Update url if it is empty or None
                 if not existing_paper.url and paper_data.get('url'):
                     existing_paper.url = paper_data['url']
                     session.commit()
-                    print(f"Updated url for paper: {existing_paper.title}")
+                    self.log(f"Updated url for paper: {existing_paper.title}", "success")
 
                 # Update authors if they are empty or None
                 if not existing_paper.authors and paper_data.get('authors'):
                     existing_paper.authors = paper_data['authors']
                     session.commit()
-                    print(f"Updated authors for paper: {existing_paper.title}")
+                    self.log(f"Updated authors for paper: {existing_paper.title}", "success")
 
                 return  # Skip saving the paper as it already exists
 
@@ -164,17 +183,16 @@ class PapersPipeline:
                 )
                 session.add(paper)
                 session.commit()
-                print(f"Added new paper: {paper.title}")
+                self.log(f"Added new paper: {paper.title}", "success")
 
         except IntegrityError as e:
             session.rollback()
-            print(f"IntegrityError: {e}")
+            self.log(f"IntegrityError: {e}", "error")
             # Log or handle the IntegrityError appropriately
         except Exception as e:
             session.rollback()
-            print(f"An error occurred while saving paper metadata: {e}")
+            self.log(f"An error occurred while saving paper metadata: {e}", "error")
             # Log or handle the exception appropriately
-
 
     def process_papers(self, query: str, category: str, batch_size: int = 100, download_dir: str = './store', sources: Optional[List[str]] = None):
         """
@@ -190,10 +208,22 @@ class PapersPipeline:
         """
         if sources is None:
             sources = ["arxiv", "elsevier", "springer"]
-        print(f"Processing papers for query: {query} from sources: {sources}")
+        
+        self.total_sources = len(sources)
+        self.update_stats(totalSources=self.total_sources, batchSize=batch_size)
+        
+        self.log(f"Processing papers for query: {query} from sources: {sources}", "info")
+        self.log(f"MongoDB URI: {MONGODB_ATLAS_CLUSTER_URI[:20]}... (truncated)", "info")
+        self.log(f"MongoDB Database: {MONGO_DB_NAME}", "info")
 
         # For demonstration, we process each source sequentially.
-        for source in sources:
+        for source_index, source in enumerate(sources):
+            self.current_source = source
+            self.current_progress = (source_index / self.total_sources) * 100
+            self.update_stats(progress=self.current_progress)
+            
+            self.log(f"Processing source: {source}", "info")
+            
             if source.lower() == "arxiv":
                 offset = 0  # Start offset for pagination
                 while True:
@@ -206,23 +236,32 @@ class PapersPipeline:
 
                     # Stop if no papers were downloaded (end of available results)
                     if not downloaded_papers:
-                        print("No more papers to download. Processing completed.")
+                        self.log("No more papers to download. Processing completed.", "info")
                         break
 
                     # Define required fields for completeness check.
                     required_fields = ["title", "authors", "published_date", "keywords", "url", "summary", "content"]
 
                     for paper in downloaded_papers:
-                        print(f"Processing paper: {paper['title']}")
+                        self.log(f"Processing paper: {paper['title']}", "processing")
+                        self.papers_processed += 1
+                        self.update_stats(papersProcessed=self.papers_processed)
 
                         # Check if the paper already exists and is complete in MongoDB
-                        if self.mongo_manager.is_document_complete(
-                            collection_name=category,
-                            title=paper['title'],
-                            required_fields=required_fields
-                        ):
-                            print(f"Paper '{paper['title']}' already exists and is complete in MongoDB. Skipping.")
-                            continue
+                        try:
+                            is_complete = self.mongo_manager.is_document_complete(
+                                collection_name=category,
+                                title=paper['title'],
+                                required_fields=required_fields
+                            )
+                            self.log(f"Document completeness check for '{paper['title']}': {is_complete}", "info")
+                            
+                            if is_complete:
+                                self.log(f"Paper '{paper['title']}' already exists and is complete in MongoDB. Skipping.", "existing")
+                                continue
+                        except Exception as e:
+                            self.log(f"Error checking document completeness: {str(e)}", "error")
+                            # Continue processing even if the check fails
 
                         # Fetch paper content
                         fetcher = ArxivPaperFetcher(title_query=paper['title'])
@@ -246,18 +285,28 @@ class PapersPipeline:
                                     "content": content
                                 }
                             )
-                            if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
-                                print(f"Paper '{paper['title']}' already exists in MongoDB. Updating metadata...")
-                                self.mongo_manager.single_update_document(
-                                    collection_name=category, title=paper['title'], updated_metadata=document.metadata
-                                )
-                            else:
-                                print(f"Paper '{paper['title']}' does not exist in MongoDB. Storing new document...")
-                                self.mongo_manager.store_document(collection_name=category, document=document)
-                                print(f"Document stored in MongoDB collection '{category}'.")
+                            
+                            try:
+                                if self.mongo_manager.document_exists(collection_name=category, title=paper['title']):
+                                    self.log(f"Paper '{paper['title']}' already exists in MongoDB. Updating metadata...", "existing")
+                                    self.mongo_manager.single_update_document(
+                                        collection_name=category, title=paper['title'], updated_metadata=document.metadata
+                                    )
+                                else:
+                                    self.log(f"Paper '{paper['title']}' does not exist in MongoDB. Storing new document...", "success")
+                                    self.mongo_manager.store_document(collection_name=category, document=document)
+                                    self.log(f"Document stored in MongoDB collection '{category}'.", "success")
+                            except Exception as e:
+                                self.log(f"Error storing/updating document in MongoDB: {str(e)}", "error")
+                                # Continue with other papers even if this one fails
 
                             # Create the indexes for search and vector search
-                            self.mongo_manager.create_indexes(collection_name=category)
+                            try:
+                                self.mongo_manager.create_indexes(collection_name=category)
+                                self.log(f"Indexes created for collection '{category}'", "info")
+                            except Exception as e:
+                                self.log(f"Error creating indexes: {str(e)}", "error")
+                                # Continue with other papers even if index creation fails
 
                             # Save paper metadata to SQL database
                             paper_data = {
@@ -274,7 +323,7 @@ class PapersPipeline:
                             with get_session_with_ctx_manager() as session:
                                 self.save_paper_metadata(session, paper_data)
                         else:
-                            print(f"No content found for paper: {paper['title']}")
+                            self.log(f"No content found for paper: {paper['title']}", "error")
 
                     # Increment the offset for the next batch
                     offset += batch_size
@@ -286,9 +335,11 @@ class PapersPipeline:
                 doi_list, full_text_urls, metadata_list = elsevier_fetcher.fetch_paper()
 
                 for meta in metadata_list:
-                    print(f"Processing Elsevier paper: {meta['title']}")
+                    self.log(f"Processing Elsevier paper: {meta['title']}", "processing")
+                    self.papers_processed += 1
+                    self.update_stats(papersProcessed=self.papers_processed)
 
-                    print(f"Metadata: {meta}")
+                    self.log(f"Metadata: {meta}", "info")
                     
                     # If a valid URL is present, try to fetch the full document.
                     if meta['url'] and meta['url'] != "URL not available":
@@ -298,7 +349,7 @@ class PapersPipeline:
                             # Process the document text (e.g. extract keywords)
                             keywords = self.extract_keywords(document_text)
 
-                            print(f"Keywords: {keywords}")
+                            self.log(f"Keywords: {keywords}", "info")
                             
                             # Save the paper metadata using a database session 
                             with get_session_with_ctx_manager() as session:
@@ -332,14 +383,14 @@ class PapersPipeline:
                             # Create a Document object 
                             doc = Document(page_content=document_text, metadata=meta)
                             self.mongo_manager.store_document(collection_name=category, document=doc)
-                            print(f"Document stored in MongoDB collection '{category}'.")
-                            print(f"Fetched page content for Elsevier paper '{meta['title']}': {document_text[:300]}...")
+                            self.log(f"Document stored in MongoDB collection '{category}'.", "success")
+                            self.log(f"Fetched page content for Elsevier paper '{meta['title']}': {document_text[:300]}...", "info")
                         else:
-                            print(f"No full document text retrieved for Elsevier paper '{meta['title']}'.")
+                            self.log(f"No full document text retrieved for Elsevier paper '{meta['title']}'.", "error")
 
                     # Check whether the document already exists in MongoDB.
                     if self.mongo_manager.document_exists(collection_name=category, title=meta['title']):
-                        print(f"Elsevier paper '{meta['title']}' already exists in MongoDB. Updating metadata...")
+                        self.log(f"Elsevier paper '{meta['title']}' already exists in MongoDB. Updating metadata...", "existing")
                         self.mongo_manager.single_update_document(
                             collection_name=category, title=meta['title'], updated_metadata={"url": meta['url']}
                         )
@@ -350,7 +401,10 @@ class PapersPipeline:
                 articles_metadata = springer_fetcher.fetch_articles()
 
                 for article in articles_metadata:
-                    print(f"Processing Springer paper: {article['title']}")
+                    self.log(f"Processing Springer paper: {article['title']}", "processing")
+                    self.papers_processed += 1
+                    self.update_stats(papersProcessed=self.papers_processed)
+                    
                     keywords = self.extract_keywords(article['content'])
                     # Save the metadata (without the full text) into your relational or metadata store
                     with get_session_with_ctx_manager() as session:
@@ -388,28 +442,38 @@ class PapersPipeline:
                         # Create a Document using the full text content and the metadata.
                         doc = Document(page_content=article["content"], metadata=article)
                         # Print a preview of the content (first 300 characters)
-                        print(f"Fetched page content for Springer paper '{article['title']}': {article['content'][:300]}...")
+                        self.log(f"Fetched page content for Springer paper '{article['title']}': {article['content'][:300]}...", "info")
                         
                         # Store the document into MongoDB (update if already exists)
                         if self.mongo_manager.document_exists(collection_name=category, title=article['title']):
-                            print(f"Springer paper '{article['title']}' already exists in MongoDB. Updating metadata...")
+                            self.log(f"Springer paper '{article['title']}' already exists in MongoDB. Updating metadata...", "existing")
                             self.mongo_manager.single_update_document(
                                 collection_name=category,
                                 title=article['title'],
                                 updated_metadata={"url": article['url']}
                             )
                         else:
-                            print(f"Springer paper '{article['title']}' does not exist in MongoDB. Storing new document...")
+                            self.log(f"Springer paper '{article['title']}' does not exist in MongoDB. Storing new document...", "success")
                             self.mongo_manager.store_document(collection_name=category, document=doc)
-                            print(f"Document stored in MongoDB collection '{category}'.")
+                            self.log(f"Document stored in MongoDB collection '{category}'.", "success")
                     else:
-                        print(f"No full document content available for Springer paper '{article['title']}'.")
+                        self.log(f"No full document content available for Springer paper '{article['title']}'.", "error")
+            
+            # Placeholder for additional sources
+            elif source.lower() in ["pubmed", "ieee", "acm"]:
+                self.log(f"Source '{source}' is not yet implemented. Skipping.", "info")
+                # Future implementation for these sources would go here
+        
+        # Update final progress
+        self.current_progress = 100.0
+        self.update_stats(progress=self.current_progress, isProcessing=False)
+        self.log("All sources processed successfully.", "success")
 
 # Example usage:
-if __name__ == "__main__":
-    from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
-    pipeline = PapersPipeline(
-        mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
-        mongo_db_name=MONGO_DB_NAME,
-    )
-    pipeline.process_papers(query="Optimizing care coordination and patient safety in adult healthcare settings", category="healthcare_management", download_dir="./store", batch_size=6, sources=None)
+# if __name__ == "__main__":
+#     from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
+#     pipeline = PapersPipeline(
+#         mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
+#         mongo_db_name=MONGO_DB_NAME,
+#     )
+#     pipeline.process_papers(query="Optimizing care coordination and patient safety in adult healthcare settings", category="healthcare_management", download_dir="./store", batch_size=6, sources=["elsevier", "springer"])
