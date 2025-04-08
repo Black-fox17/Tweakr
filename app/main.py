@@ -15,7 +15,8 @@ st.set_page_config(
     layout="wide"
 )
 
-# Health check endpoint
+# Health check endpoint - this will be handled by the health_check.py script
+# This is just a fallback in case the health check script fails
 if os.environ.get('KOYEB_HEALTH_CHECK') == 'true':
     st.write("OK")
     st.stop()

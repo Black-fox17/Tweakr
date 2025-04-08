@@ -32,4 +32,4 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 EXPOSE 5000
 
 # Command to run the application
-CMD ["streamlit", "run", "app/main.py", "--server.port=5000", "--server.address=0.0.0.0", "--browser.serverAddress=0.0.0.0", "--browser.serverPort=5000"] 
+CMD ["python", "health_check.py"] 
