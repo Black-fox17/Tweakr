@@ -1,0 +1,24 @@
+services:
+  # A Docker web service
+  - type: web
+    name: tweakr-api
+    runtime: python
+    plan: free
+    autoDeploy: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    env:
+      - key: POSTGRES_DATABASE_URL
+        value: postgresql://tweakrr_owner:F6CIBQTukpf8@ep-muddy-union-a5auv423-pooler.us-east-2.aws.neon.tech/tweakrr?sslmode=require
+      - key: GOOGLE_GEMINI_KEY
+        value: AIzaSyBAERA-vtmDWZpiyzqpxHCGyMjMkSPCPIU
+      - key: LOGFIRE_TOKEN
+        value: pylf_v1_us_BkGSb2QlrXwxMsJQ55xqqDYtq5nx394pJqyWgGf8lKrb
+      - key: MONGO_DATABASE_URL
+        value: mongodb+srv://tweakr01:TweakReference@tweakr.d7dhl.mongodb.net/?retryWrites=true&w=majority&appName=tweakr
+      - key: ELSEVIER_API_KEY
+        value: b784484eaa01d859a7c1ca50cc66b442
+      - key: IEEE_API_KEY
+        value: rrks7dznq3g99hrfp63xrq7m
+      - key: SPRINGER_API_KEY
+        value: 1824d1fe3318b5041ed808d4360fd8d7
