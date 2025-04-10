@@ -33,10 +33,29 @@ class ResearchPaperAssistant:
         try:
             with get_session_with_ctx_manager() as session:
                 categories = session.query(Papers.category).distinct().order_by(Papers.category).all()
-                return [category[0] for category in categories]
+                # Standardize categories and remove duplicates
+                standardized_categories = [self.standardize_category(category[0]) for category in categories if category[0]]
+                unique_categories = sorted(list(set(standardized_categories)))
+                return unique_categories
         except Exception as e:
             st.error(f"Error fetching categories: {e}")
             return []
+
+    def standardize_category(self, category):
+        """Standardize category format"""
+        if not category:
+            return "uncategorized"
+        
+        # Convert to lowercase and strip whitespace
+        category = category.lower().strip()
+        
+        # Replace spaces with underscores
+        category = category.replace(" ", "_")
+        
+        # Remove any special characters
+        category = ''.join(c for c in category if c.isalnum() or c == '_')
+        
+        return category
 
     def run(self):
         """

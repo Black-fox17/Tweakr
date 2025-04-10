@@ -213,8 +213,16 @@ class ElsevierPaperFetcher:
         urls = self.extract_full_text_urls([entry])
         full_text_url = urls[0] if urls else entry.get("prism:url", "URL not available")
         
+        # Try different possible title fields in order of preference
+        title = (
+            entry.get("dc:title") or  # Dublin Core title
+            entry.get("prism:title") or  # Prism title
+            entry.get("title") or  # Direct title field
+            "Title not available"  # Fallback
+        )
+        
         return {
-            "title": entry.get("dc:title", "Title not available"),
+            "title": title,
             "doi": entry.get("prism:doi", "DOI not available"),
             "authors": entry.get("dc:creator", "Authors not available"),
             "published_date": entry.get("prism:coverDate", "Publication date not available"),
