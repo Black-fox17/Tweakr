@@ -5,17 +5,16 @@ from datetime import datetime
 from fastapi import FastAPI
 import uvicorn
 from datapipeline.core.pipeline_manager import PipelineManager
-from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
 
 # Create logs directory if it doesn't exist
-os.makedirs('logs', exist_ok=True)
+os.makedirs('/app/logs', exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/pipeline.log'),
+        logging.FileHandler('/app/logs/pipeline.log'),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -60,12 +59,12 @@ def run_pipeline():
 def main():
     try:
         # Check environment variables
-        # if not check_environment():
-        #     sys.exit(1)
+        if not check_environment():
+            sys.exit(1)
             
         logging.info("Starting Pipeline Manager Service")
-        logging.info(f"MongoDB URI: {MONGODB_ATLAS_CLUSTER_URI[:20]}... (truncated)")
-        logging.info(f"MongoDB Database: {MONGO_DB_NAME}")
+        logging.info(f"MongoDB URI: {os.getenv('MONGODB_ATLAS_CLUSTER_URI')[:20]}... (truncated)")
+        logging.info(f"MongoDB Database: {os.getenv('MONGO_DB_NAME')}")
         
         # Start the pipeline in a separate thread
         import threading
