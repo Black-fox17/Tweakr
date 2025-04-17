@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from typing import Optional
+from typing import Optional, List
 from dataclasses import dataclass
 
 @dataclass
@@ -28,6 +28,64 @@ class IEEEPaperFetcher:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
+
+    def search_papers(self, query: str, max_results: int = 10) -> List[Paper]:
+        """
+        Search for papers matching the query and return their metadata.
+        
+        Args:
+            query: Search query string
+            max_results: Maximum number of results to return
+            
+        Returns:
+            List of Paper objects containing metadata
+        """
+        search_url = f"{self.base_url}/search/searchresult.jsp"
+        params = {
+            "queryText": query,
+            "newsearch": "true",
+            "pageNumber": 1,
+            "rowsPerPage": max_results
+        }
+        
+        response = self.session.get(search_url, params=params)
+        if response.status_code != 200:
+            return []
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        papers = []
+        
+        for result in soup.find_all('div', class_='List-results-items'):
+            try:
+                # Extract DOI from the document link
+                doc_link = result.find('a', class_='document-link')
+                if not doc_link or 'href' not in doc_link.attrs:
+                    continue
+                    
+                doi = doc_link['href'].split('/')[-1]
+                
+                # Extract title
+                title_elem = result.find('h2', class_='result-item-title')
+                title = title_elem.text.strip() if title_elem else ''
+                
+                # Extract authors
+                author_elems = result.find_all('a', class_='author-name')
+                authors = [author.text.strip() for author in author_elems]
+                
+                # Extract abstract
+                abstract_elem = result.find('div', class_='description')
+                abstract = abstract_elem.text.strip() if abstract_elem else ''
+                
+                papers.append(Paper(
+                    doi=doi,
+                    title=title,
+                    authors=authors,
+                    abstract=abstract
+                ))
+            except (AttributeError, TypeError) as e:
+                continue
+                
+        return papers
 
     def fetch_paper(self, doi: str) -> Paper:
         """Fetch paper metadata and PDF content from IEEE Xplore."""

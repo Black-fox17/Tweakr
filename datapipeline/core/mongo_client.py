@@ -26,11 +26,22 @@ class MongoDBVectorStoreManager:
         """
         try:
             logging.info(f"Connecting to MongoDB with URI: {connection_string[:20]}... (truncated)")
-            self.client = MongoClient(connection_string)
+            self.client = MongoClient(
+                connection_string,
+                serverSelectionTimeoutMS=30000,  # 30 seconds timeout for server selection
+                socketTimeoutMS=45000,  # 45 seconds timeout for socket operations
+                connectTimeoutMS=10000,  # 10 seconds timeout for initial connection
+                maxPoolSize=50,  # Maximum number of connections in the pool
+                minPoolSize=10,  # Minimum number of connections in the pool
+                retryWrites=True,  # Enable retryable writes
+                retryReads=True,  # Enable retryable reads
+                heartbeatFrequencyMS=10000,  # Check server status every 10 seconds
+                appname="tweakr-pipeline"  # Identify the application
+            )
             self.db = self.client[db_name]
             logging.info(f"Connected to MongoDB database: {db_name}")
             
-            # Test the connection
+            # Test the connection with a longer timeout
             self.client.server_info()
             logging.info("MongoDB connection test successful")
         except Exception as e:
