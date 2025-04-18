@@ -59,8 +59,8 @@ def run_pipeline():
 def main():
     try:
         # Check environment variables
-        if not check_environment():
-            sys.exit(1)
+        # if not check_environment():
+        #     sys.exit(1)
             
         logging.info("Starting Pipeline Manager Service")
         logging.info(f"MongoDB URI: {os.getenv('MONGODB_ATLAS_CLUSTER_URI')[:20]}... (truncated)")
