@@ -7,23 +7,27 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Create necessary directories
-RUN mkdir -p /app/logs
+# Create necessary directories with proper permissions
+RUN mkdir -p /code/logs && \
+    mkdir -p /root/.config/elsapy/logs && \
+    chmod -R 777 /code/logs && \
+    chmod -R 777 /root/.config/elsapy/logs
 
 # Copy requirements first to leverage Docker cache
 COPY datapipeline/requirements.txt .
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 # Copy the application code
 COPY ./datapipeline /code/datapipeline
 
 # Set environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/code
 ENV PYTHONUNBUFFERED=1
 
 # Create a non-root user
-RUN useradd -m pipeline
-RUN chown -R pipeline:pipeline /app
+RUN useradd -m pipeline && \
+    chown -R pipeline:pipeline /code && \
+    chown -R pipeline:pipeline /root/.config/elsapy
 USER pipeline
 
 # Run the pipeline service
