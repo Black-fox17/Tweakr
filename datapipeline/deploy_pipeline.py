@@ -6,19 +6,6 @@ from fastapi import FastAPI
 import uvicorn
 from datapipeline.core.pipeline_manager import PipelineManager
 
-# Create logs directory if it doesn't exist
-os.makedirs('/app/logs', exist_ok=True)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/app/logs/pipeline.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
 # Create FastAPI app
 app = FastAPI()
 
