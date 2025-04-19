@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 from scalar_fastapi import get_scalar_api_reference
+from api.v1.routes import api_version_one
 
 
 # from app.monitoring.services import request_attributes_mapper, monitoring
@@ -72,6 +73,7 @@ app.add_middleware(
 # app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
 # app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
 app.include_router(datapipeline_router, prefix="/datapipeline", tags=['DATAPIPELINE'])
+app.include_router(api_version_one)
 
 
 if __name__ == "__main__":
