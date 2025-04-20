@@ -33,8 +33,6 @@ from api.utils.settings import settings
 
 auth = APIRouter(prefix="/auth", tags=["Authentication"])
 
-
-
   
 @auth.post("/register", status_code=status.HTTP_201_CREATED, response_model=auth_response)
 def register(
@@ -46,12 +44,10 @@ def register(
 ):
     """Endpoint for a user to register their account"""
 
-    base_url = str(request.base_url).strip("/")
     # Create user account
     user = user_service.create(db=db, schema=user_schema)
 
 
-    verification_token = user_service.create_verification_token(user.id)
 
     access_token = user_service.create_access_token(user_id=user.id)
     refresh_token = user_service.create_refresh_token(user_id=user.id)

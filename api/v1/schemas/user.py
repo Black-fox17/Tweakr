@@ -42,25 +42,6 @@ class UserEmailSender(BaseModel):
     
 class UserCreate(BaseModel):
     """Schema to create a user"""
-
-    email: EmailStr
-    password: Annotated[
-        str, StringConstraints(
-            min_length=8,
-            max_length=64,
-            strip_whitespace=True
-        )
-    ]
-    """Added the confirm_password field to UserCreate Model"""
-    confirm_password: Annotated[
-        str, 
-        StringConstraints(
-            min_length=8,
-            max_length=64,
-            strip_whitespace=True
-        ),
-        Field(exclude=True)  # exclude confirm_password field
-    ]
     first_name: Annotated[
         str, StringConstraints(
             min_length=3,
@@ -75,6 +56,15 @@ class UserCreate(BaseModel):
             strip_whitespace=True
         )
     ]
+    email: EmailStr
+    password: Annotated[
+        str, StringConstraints(
+            min_length=8,
+            max_length=64,
+            strip_whitespace=True
+        )
+    ]
+    
 
     @model_validator(mode='before')
     @classmethod
@@ -83,7 +73,6 @@ class UserCreate(BaseModel):
         Validates passwords
         """
         password = values.get('password')
-        confirm_password = values.get('confirm_password') # gets the confirm password
         email = values.get("email")
 
         # constraints for password
@@ -96,23 +85,16 @@ class UserCreate(BaseModel):
         if not any(c in ['!','@','#','$','%','&','*','?','_','-'] for c in password):
             raise ValueError("password must include at least one special character")
 
-        """Confirm Password Validation"""
-
-        if not confirm_password:
-            raise ValueError("Confirm password field is required")
-        elif password != confirm_password:
-            raise ValueError("Passwords do not match")
-        
-        try:
-            email = validate_email(email, check_deliverability=True)
-            if email.domain.count(".com") > 1:
-                raise EmailNotValidError("Email address contains multiple '.com' endings.")
-            if not validate_mx_record(email.domain):
-                raise ValueError('Email is invalid')
-        except EmailNotValidError as exc:
-            raise ValueError(exc) from exc
-        except Exception as exc:
-            raise ValueError(exc) from exc
+        # try:
+        #     email = validate_email(email, check_deliverability=True)
+        #     if email.domain.count(".com") > 1:
+        #         raise EmailNotValidError("Email address contains multiple '.com' endings.")
+        #     if not validate_mx_record(email.domain):
+        #         raise ValueError('Email is invalid')
+        # except EmailNotValidError as exc:
+        #     raise ValueError(exc) from exc
+        # except Exception as exc:
+        #     raise ValueError(exc) from exc
         
         return values
 
@@ -238,7 +220,6 @@ class AdminCreateUserResponse(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    totp_code: str | None = None
     
     @model_validator(mode='before')
     @classmethod
@@ -250,7 +231,6 @@ class LoginRequest(BaseModel):
             return values
         password = values.get('password')
         email = values.get("email")
-        totp_code = values.get("totp_code")
 
         # constraints for password
         if not any(c.islower() for c in password):
@@ -273,11 +253,6 @@ class LoginRequest(BaseModel):
         except Exception as exc:
             raise ValueError(exc) from exc
         
-        if totp_code:
-            from api.v1.schemas.totp_device import TOTPTokenSchema
-            
-            if not TOTPTokenSchema.validate_totp_code(totp_code):
-                raise ValueError("totp code must be a 6-digit number")
         
         return values
 

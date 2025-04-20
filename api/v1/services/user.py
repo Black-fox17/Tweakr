@@ -5,7 +5,7 @@ import datetime as dt
 from fastapi import status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
-# from jose import JWTError, jwt
+from jose import JWTError, jwt
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -17,6 +17,7 @@ from api.db.database import get_db
 from api.utils.db_validators import check_model_existence
 from api.v1.models import User
 from api.v1.schemas import user
+from api.utils.settings import settings
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -171,7 +172,26 @@ class UserService(Service):
 
         return user
 
-    
+    def create_access_token(self, user_id: str) -> str:
+        """Function to create access token"""
+
+        expires = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+        data = {"user_id": user_id, "exp": expires, "type": "access"}
+        encoded_jwt = jwt.encode(data, settings.SECRET_KEY, settings.ALGORITHM)
+        return encoded_jwt
+
+    def create_refresh_token(self, user_id: str) -> str:
+        """Function to create access token"""
+
+        expires = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            days=settings.JWT_REFRESH_EXPIRY
+        )
+        data = {"user_id": user_id, "exp": expires, "type": "refresh"}
+        encoded_jwt = jwt.encode(data, settings.SECRET_KEY, settings.ALGORITHM)
+        return encoded_jwt
+
     
     def update(
         self, db: Session, current_user: User, schema: user.UserUpdate, id=None
@@ -266,6 +286,23 @@ class UserService(Service):
 
         token = self.verify_access_token(access_token, credentials_exception)
         user = db.query(User).filter(User.id == token.id).first()
+
+        return user
+    def get_user_by_email(self, db: Session, email: str) -> Optional[User]:
+        """
+        Fetches a user by their email address.
+
+        Args:
+            db: The database session.
+            email: The email address of the user.
+
+        Returns:
+            The user object if found, otherwise None.
+        """
+        user = db.query(User).filter(User.email == email).first()
+
+        if not user:
+            return None
 
         return user
 

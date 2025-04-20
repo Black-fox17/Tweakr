@@ -1,0 +1,14 @@
+reegister,Done
+login,Done
+register with google and apple,
+login with google and apple,
+faqs,
+generate citation endpoint,
+generated text from pdf file,
+generate citation based on this input
+Accept/reject citation end point 
+Select year papers
+Select citation type
+Download citation 
+Word count 
+Pay as you go, monthly and yearly payment plan
