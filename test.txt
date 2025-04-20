@@ -1,7 +1,7 @@
 reegister,Done
 login,Done
-register with google and apple,
-login with google and apple,
+register with google and apple,Done
+login with google and apple,Done
 faqs,
 generate citation endpoint,
 generated text from pdf file,
