@@ -2,13 +2,13 @@ reegister,Done
 login,Done
 register with google and apple,Done
 login with google and apple,Done
-faqs,
-generate citation endpoint,
-generated text from pdf file,
+faqs,Done
+generate citation endpoint,DOne
+generated text from pdf file, Done
 generate citation based on this input
-Accept/reject citation end point 
-Select year papers
-Select citation type
-Download citation 
-Word count 
+Accept/reject citation end point Done
+Select year papers TBD
+Select citation type TBD
+Download citation Done
+Word count, Done
 Pay as you go, monthly and yearly payment plan
