@@ -4,10 +4,13 @@ import sys
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-sys.path.append(os.path.realpath(os.path.dirname(__file__) + "/../../datapipeline"))
-from datapipeline.core.database import SQLALCHEMY_DATABASE_URL, Base
-from datapipeline.models.papers import *
-from app.auth.models import *
+# sys.path.append(os.path.realpath(os.path.dirname(__file__) + "/../../datapipeline"))
+# from datapipeline.core.database import SQLALCHEMY_DATABASE_URL, Base
+# from datapipeline.models.papers import *
+# from app.auth.models import *
+from api.v1.models import *
+from api.v1.models.associations import Base
+from decouple import config as decouple_config
 
 from alembic import context
 
@@ -25,9 +28,9 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
+database_url = decouple_config('DB_URL')
 
-
-config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+config.set_main_option("sqlalchemy.url", database_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
