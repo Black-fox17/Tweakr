@@ -1,0 +1,111 @@
+from fastapi import (
+    APIRouter,
+    Depends,
+    status,
+)
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.orm import Session
+from api.utils.success_response import success_response
+from api.v1.models.user import User
+from api.v1.services.subscription import subscription_service
+from api.db.database import get_db
+from api.v1.services.user import user_service
+from api.v1.schemas.subscription import (
+    CreatesubscriptionSchema, CreatesubscriptionResponse, GetsubscriptionListResponse
+)
+
+
+subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
+
+
+# @bill_plan.get("/{organisation_id}/billing-plans", response_model=GetsubscriptionListResponse)
+# async def retrieve_all_subscriptions(
+#     organisation_id: str, db: Session = Depends(get_db)
+# ):
+#     """
+#     Endpoint to get all billing plans
+#     """
+
+#     plans = subscription_service.fetch_all(db=db, organisation_id=organisation_id)
+
+#     return success_response(
+#         status_code=status.HTTP_200_OK,
+#         message="Plans fetched successfully",
+#         data={
+#             "plans": jsonable_encoder(plans),
+#         },
+#     )
+
+
+@subscription.post("/subscriptions", response_model=CreatesubscriptionResponse)
+async def create_new_subscription(
+    request: CreatesubscriptionSchema,
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint to create new billing plan
+    """
+
+    plan = subscription_service.create(db=db, request=request)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Plans created successfully",
+        data=jsonable_encoder(plan),
+    )
+
+
+@subscription.patch("/subscriptions/{supscription_id}", response_model=CreatesubscriptionResponse)
+async def update_a_subscription(
+    subscription_id: str,
+    request: CreatesubscriptionSchema,
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint to update a billing plan by ID
+    """
+
+    plan = subscription_service.update(db=db, id=subscription_id, schema=request)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Plan updated successfully",
+        data=jsonable_encoder(plan),
+    )
+
+
+@subscription.delete("/billing-plans/{subscription_id}", response_model=success_response)
+async def delete_a_subscription(
+    subscription_id: str,
+    _: User = Depends(user_service.get_current_super_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint to delete a billing plan by ID
+    """
+
+    subscription_service.delete(db=db, id=subscription_id)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Plan deleted successfully",
+    )
+
+
+@subscription.get('/billing-plans/{subscription_id}', response_model=CreatesubscriptionResponse)
+async def retrieve_single_subscriptions(
+    subscription_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(user_service.get_current_user)
+):
+    """
+    Endpoint to get single billing plan by id
+    """
+
+    subscription = subscription_service.fetch(db, subscription_id)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Plan fetched successfully",
+        data=jsonable_encoder(subscription)
+    )
