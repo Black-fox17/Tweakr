@@ -72,8 +72,17 @@ def main():
         pipeline_thread.daemon = True
         pipeline_thread.start()
         
-        # Start the FastAPI server
-        uvicorn.run(app, host="0.0.0.0", port=8080)
+        # Start the FastAPI server with proper configuration
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=5000,
+            log_level="info",
+            access_log=True,
+            timeout_keep_alive=60
+        )
+        server = uvicorn.Server(config)
+        server.run()
         
     except KeyboardInterrupt:
         logging.info("Pipeline service stopped by user")
