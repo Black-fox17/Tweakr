@@ -4,112 +4,123 @@ from api.v1.models.subscriptions_plan import SubscriptionPlans
 from api.v1.models.subscriptions import Subscription
 from typing import Any, Optional
 from api.core.base.services import Service
-from api.v1.schemas.subscription import CreateBillingPlanSchema
+from api.v1.schemas.subscription import CreateSubscriptionSchema
 from api.utils.db_validators import check_model_existence
 from fastapi import HTTPException, status
+from datetime import datetime, timedelta
 
 
-class BillingPlanService(Service):
+class SubscriptionService(Service):
     """Product service functionality"""
 
-    def create(self, db: Session, request: CreateBillingPlanSchema):
+    def create(self, db: Session, user_id: str, request: CreateSubscriptionSchema):
         """
         Create and return a new billing plan, ensuring a plan name can only exist 
         once for each 'monthly' and 'yearly' duration, and cannot be created 
         if it already exists for both durations.
         """
+        if request.duration == "monthly":
+            price_monthly = request.price
+            price_yearly = request.price * 12 
+            duration = 30
+        else:
+            price_monthly = request.price / 12
+            price_yearly = request.price
+            duration = 365
 
-        # Check if a plan with the same name already exists for the provided duration
-        existing_plan_for_same_duration = db.query(SubscriptionPlans).filter(
+        # Check if the plan already exists for both durations
+        existing_plan = db.query(SubscriptionPlans).filter(
             SubscriptionPlans.name == request.name,
-            SubscriptionPlans.duration == request.duration
         ).first()
 
-        if existing_plan_for_same_duration:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A billing plan with the name '{request.name}' already exists for duration '{request.duration}'."
+
+        if not existing_plan:
+            plan = SubscriptionPlans(
+                name=request.name,
+                price_monthly=price_monthly,
+                price_yearly=price_yearly,
+                features=request.features,
             )
-
-        # Check if a plan with the same name exists for the other duration
-        other_duration = "yearly" if request.duration == "monthly" else "monthly"
-        existing_plan_for_other_duration = db.query(BillingPlan).filter(
-            BillingPlan.name == request.name,
-            BillingPlan.duration == other_duration
-        ).first()
-
-        if existing_plan_for_other_duration:
-            # If a plan with the same name exists for both durations, raise an exception
-            if existing_plan_for_same_duration and existing_plan_for_other_duration:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"A billing plan with the name '{request.name}' already exists for both 'monthly' and 'yearly' durations."
-                )
-
-        # Adjust the price if the duration is 'yearly'
-        if request.duration == "yearly":
-            request.price = request.price * 12 * 0.8  # Apply yearly discount of 20%
-
-        # Create a BillingPlan instance using the modified request
-        plan = BillingPlan(**request.dict())
-
-        try:
             db.add(plan)
             db.commit()
             db.refresh(plan)
-            return plan
-        
-        except IntegrityError as e:
-            db.rollback()
-            # Check if it's a foreign key violation error
-            if "foreign key constraint" in str(e.orig):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Organisation with id {request.organisation_id} not found."
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="A database integrity error occurred."
-                )
 
-        except SQLAlchemyError as e:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="A database error occurred."
+            user_subscription = Subscription(
+                user_id=user_id,
+                plan_id=plan.id,
+                start_date=datetime.now(),
+                end_date=datetime.now() + timedelta(days=duration),
             )
-
-
+            db.add(user_subscription)
+            db.commit()
+            db.refresh(user_subscription)
+            return plan
+        else:
+            user_subscription = Subscription(
+                user_id=user_id,
+                plan_id=existing_plan.id,
+                start_date=datetime.now(),
+                end_date=datetime.now() + timedelta(days=duration),
+            )
+            db.add(user_subscription)
+            db.commit()
+            db.refresh(user_subscription)
+            return existing_plan
 
     def delete(self, db: Session, id: str):
         """
-        delete a plan by plan id
+        delete a subscription plan by id
         """
-        plan = check_model_existence(db, BillingPlan, id)
+        plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == id).first()
+        
+        if not plan:
+            raise HTTPException(
+                status_code=404, detail="Subscription plan not found."
+            )
 
         db.delete(plan)
         db.commit()
 
-    def fetch(self, db: Session, billing_plan_id: str):
-        billing_plan = db.query(BillingPlan).get(billing_plan_id)
+    def fetch(self, db: Session, subscription_id: str):
+        subscription = db.query(SubscriptionPlans).filter(
+            SubscriptionPlans.id == subscription_id
+        ).first()
 
-        if billing_plan is None:
+        if subscription is None:
             raise HTTPException(
-                status_code=404, detail="Billing plan not found."
+                status_code=404, detail="Subscription plan not found."
             )
 
-        return billing_plan
+        return subscription
+    def fetch_user_subscription(self, db: Session, user_id: str):
+        user_subscription = db.query(Subscription).filter(
+            Subscription.user_id == user_id
+        ).all()
+
+        return user_subscription
 
     def update(self, db: Session, id: str, schema):
         """
-        fetch and update a billing plan
+        fetch and update a subscription plan
         """
-        plan = check_model_existence(db, BillingPlan, id)
+        plan = db.query(SubscriptionPlans).filter(SubscriptionPlans.id == id).first()
+        
+        if not plan:
+            raise HTTPException(
+                status_code=404, detail="Subscription plan not found."
+            )
 
-        update_data = schema.dict(exclude_unset=True)
-        for column, value in update_data.items():
-            setattr(plan, column, value)
+        if schema.duration == "monthly":
+            price_monthly = schema.price_monthly 
+            price_yearly = schema.price_monthly * 12
+        else:
+            price_monthly = schema.price_yearly / 12
+            price_yearly = schema.price_yearly
+
+        plan.name = schema.name
+        plan.price_monthly = price_monthly
+        plan.price_yearly = price_yearly
+        plan.features = schema.features
 
         db.commit()
         db.refresh(plan)
@@ -117,19 +128,19 @@ class BillingPlanService(Service):
         return plan
 
     def fetch_all(self, db: Session, **query_params: Optional[Any]):
-        """Fetch all products with option tto search using query parameters"""
+        """Fetch all subscription plans with option to search using query parameters"""
 
-        query = db.query(BillingPlan)
+        query = db.query(SubscriptionPlans)
 
         # Enable filter by query parameter
         if query_params:
             for column, value in query_params.items():
-                if hasattr(BillingPlan, column) and value:
+                if hasattr(SubscriptionPlans, column) and value:
                     query = query.filter(
-                        getattr(BillingPlan, column).ilike(f"%{value}%")
+                        getattr(SubscriptionPlans, column).ilike(f"%{value}%")
                     )
 
         return query.all()
 
 
-billing_plan_service = BillingPlanService()
+subscription_service = SubscriptionService()

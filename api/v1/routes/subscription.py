@@ -10,9 +10,7 @@ from api.v1.models.user import User
 from api.v1.services.subscription import subscription_service
 from api.db.database import get_db
 from api.v1.services.user import user_service
-from api.v1.schemas.subscription import (
-    CreatesubscriptionSchema, CreatesubscriptionResponse, GetsubscriptionListResponse
-)
+from api.v1.schemas.subscription import CreateSubscriptionSchema, CreateSubscriptionResponse
 
 
 subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
@@ -37,16 +35,17 @@ subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
 #     )
 
 
-@subscription.post("/subscriptions", response_model=CreatesubscriptionResponse)
+@subscription.post("/subscriptions", response_model=CreateSubscriptionResponse)
 async def create_new_subscription(
-    request: CreatesubscriptionSchema,
+    request: CreateSubscriptionSchema,
     db: Session = Depends(get_db),
+    current_user: User = Depends(user_service.get_current_user)
 ):
     """
     Endpoint to create new billing plan
     """
 
-    plan = subscription_service.create(db=db, request=request)
+    plan = subscription_service.create(db=db, user_id=current_user.id, request=request)
 
     return success_response(
         status_code=status.HTTP_200_OK,
@@ -55,10 +54,10 @@ async def create_new_subscription(
     )
 
 
-@subscription.patch("/subscriptions/{supscription_id}", response_model=CreatesubscriptionResponse)
+@subscription.patch("/subscriptions/{supscription_id}", response_model=CreateSubscriptionResponse)
 async def update_a_subscription(
     subscription_id: str,
-    request: CreatesubscriptionSchema,
+    request: CreateSubscriptionSchema,
     db: Session = Depends(get_db),
 ):
     """
@@ -74,25 +73,24 @@ async def update_a_subscription(
     )
 
 
-@subscription.delete("/billing-plans/{subscription_id}", response_model=success_response)
-async def delete_a_subscription(
-    subscription_id: str,
-    _: User = Depends(user_service.get_current_super_admin),
-    db: Session = Depends(get_db),
-):
-    """
-    Endpoint to delete a billing plan by ID
-    """
+# @subscription.delete("/billing-plans/{subscription_id}", response_model=success_response)
+# async def delete_a_subscription(
+#     subscription_id: str,
+#     db: Session = Depends(get_db),
+# ):
+#     """
+#     Endpoint to delete a billing plan by ID
+#     """
 
-    subscription_service.delete(db=db, id=subscription_id)
+#     subscription_service.delete(db=db, id=subscription_id)
 
-    return success_response(
-        status_code=status.HTTP_200_OK,
-        message="Plan deleted successfully",
-    )
+#     return success_response(
+#         status_code=status.HTTP_200_OK,
+#         message="Plan deleted successfully",
+#     )
 
 
-@subscription.get('/billing-plans/{subscription_id}', response_model=CreatesubscriptionResponse)
+@subscription.get('/subscriptions/{subscription_id}', response_model=CreateSubscriptionResponse)
 async def retrieve_single_subscriptions(
     subscription_id: str,
     db: Session = Depends(get_db),
@@ -109,3 +107,21 @@ async def retrieve_single_subscriptions(
         message="Plan fetched successfully",
         data=jsonable_encoder(subscription)
     )
+
+@subscription.get('/subscriptions/user', response_model=CreateSubscriptionResponse)
+async def retrieve_all_subscriptions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(user_service.get_current_user)
+):
+    """
+    Endpoint to get all billing plans
+    """
+
+    subscriptions = subscription_service.fetch_user_subscription(db, current_user.id)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Subscriptions fetched successfully",
+        data=jsonable_encoder(subscriptions)
+    )
+

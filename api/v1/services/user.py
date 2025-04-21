@@ -271,6 +271,34 @@ class UserService(Service):
 
         return pwd_context.verify(secret=password, hash=hash)
 
+    def verify_access_token(self, access_token: str, credentials_exception):
+        """Function to decode and verify access token"""
+
+        try:
+            payload = jwt.decode(
+                access_token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+            )
+            user_id = payload.get("user_id")
+            token_type = payload.get("type")
+
+            if user_id is None:
+                raise credentials_exception
+
+            if token_type == "refresh":
+                raise HTTPException(
+                    detail="Refresh token not allowed", status_code=400
+                )
+
+            token_data = user.TokenData(id=user_id)
+
+        except JWTError as err:
+            print(err)
+            raise credentials_exception
+
+        return token_data
+
     def get_current_user(
         self,
         access_token: str = Depends(oauth2_scheme),
