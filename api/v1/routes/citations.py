@@ -10,12 +10,33 @@ from app.core.intext_citation import InTextCitationProcessor
 from app.core.paper_matcher import PaperKeywordMatcher
 from app.auth.helpers import get_current_active_user
 from app.core.wordcount import count_words_in_docx
+from datapipeline.core.database import get_session_with_ctx_manager
+from datapipeline.models.papers import Papers
 import logging
 import uuid
 import json
 from typing import List, Dict, Any
 
 citations = APIRouter(prefix="/citations", tags=["Citations"])
+
+@citations.get("/categories")
+async def get_categories():
+    """
+    Fetch unique categories from the database.
+    """
+    try:
+        with get_session_with_ctx_manager() as session:
+            categories = session.query(Papers.category).distinct().order_by(Papers.category).all()
+            # Standardize categories and remove duplicates
+            standardized_categories = [category[0] for category in categories if category[0]]
+            unique_categories = sorted(list(set(standardized_categories)))
+            return {"categories": unique_categories}
+    except Exception as e:
+        logging.error(f"Error fetching categories: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to fetch categories: {str(e)}"}
+        )
 
 @citations.post("/char-count")
 async def char_count(file: UploadFile = File(...),):
