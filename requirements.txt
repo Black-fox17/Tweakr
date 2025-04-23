@@ -42,6 +42,10 @@ pytest>=7.4.3
 httpx>=0.25.1
 logfire>=3.0.0
 
+# NLP and Text Processing
+spacy>=3.0.0
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
 # Additional dependencies with looser version constraints
 aiohttp>=3.8.0
 aiosignal>=1.2.0
@@ -116,7 +120,6 @@ shellingham>=1.5.0
 six>=1.16.0
 smart-open>=5.0.0
 sniffio>=1.2.0
-spacy>=3.0.0
 spacy-legacy>=3.0.0
 spacy-loggers>=1.0.0
 srsly>=2.4.0
