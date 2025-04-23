@@ -155,3 +155,4 @@ psycopg2
 passlib
 bcrypt
 alembic
+authlib
