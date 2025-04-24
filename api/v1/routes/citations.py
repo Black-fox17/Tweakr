@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from io import BytesIO
 from pathlib import Path
 import tempfile
+from docx import Document
 
 from app.core.references_generator import ReferenceGenerator
 from app.core.intext_citation import InTextCitationProcessor
@@ -185,3 +186,44 @@ async def update_citations_route(document_id, reviewed_citations):
             "status": "error",
             "message": str(e)
         }), 500
+
+@citations.post("/extract-content")
+async def extract_paper_content(file: UploadFile = File(...)):
+    """
+    Extracts the content from a .docx file and returns it as a joined string.
+    """
+    # Create a temporary file to store the uploaded document
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+        temp_file_path = temp_file.name
+        # Save the uploaded file to the temporary file
+        temp_file.write(await file.read())
+
+    try:
+        # Read the document content
+        doc = Document(temp_file_path)
+        # Join all paragraphs with a newline
+        content = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        
+        return {
+            "status": "success",
+            "content": content,
+            "message": "Content extracted successfully"
+        }
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Error extracting content: {str(e)}"
+            }
+        )
+
+    finally:
+        # Ensure the file is not in use before deletion
+        try:
+            Path(temp_file_path).unlink(missing_ok=True)
+        except PermissionError:
+            import time
+            time.sleep(1)  # Small delay before retrying
+            Path(temp_file_path).unlink(missing_ok=True)
