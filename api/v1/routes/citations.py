@@ -62,7 +62,8 @@ async def process_paper(
 ):
     """
     Route to process an academic paper, generate references and in-text citations
-    based on the provided citation style and category.
+    based on the provided citation style and category. If no matches are found in the initial category,
+    it will try to find matches in other categories by generating a query from the document content.
     """
     # Create a temporary file to store the uploaded document
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
@@ -74,17 +75,18 @@ async def process_paper(
         # Initialize PaperKeywordMatcher
         matcher = PaperKeywordMatcher()
 
-        # Get matching titles based on the document content and category
-        matching_titles = matcher.match_keywords(temp_file_path, category)
+        # Get matching titles using the retry mechanism
+        matching_titles, category_used = matcher.find_matching_papers_with_retry(temp_file_path, category)
+        
         if matching_titles:
             # Generate references
             reference_generator = ReferenceGenerator(style=style)
-            references = reference_generator.generate_references(matching_titles, category)
+            references = reference_generator.generate_references(matching_titles, category_used)
 
             print(references)
 
             # Process in-text citations and save the modified document
-            intext_citation_processor = InTextCitationProcessor(style=style, collection_name=category)
+            intext_citation_processor = InTextCitationProcessor(style=style, collection_name=category_used)
             output_file_path = temp_file_path.replace(".docx", "_with_citations.docx")
             modified_file_path = intext_citation_processor.process_sentences(temp_file_path, output_file_path)
 
@@ -95,7 +97,7 @@ async def process_paper(
                 filename="modified_paper.docx"
             )
         else:
-            return {"message": "No matching papers found."}
+            return {"message": "No matching papers found after trying all available categories."}
 
     except Exception as e:
         return {"error": str(e)}
