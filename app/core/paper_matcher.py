@@ -166,7 +166,7 @@ class PaperKeywordMatcher:
                     query=self.generate_query_from_content(content),
                     category=category,
                     batch_size=10,
-                    sources=["arxiv", "elsevier", "springer"]
+                    sources=["elsevier", "springer"]
                 )
                 
                 # Try matching again
