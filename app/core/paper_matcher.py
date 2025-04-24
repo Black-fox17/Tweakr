@@ -6,6 +6,8 @@ from app.core.extract_keywords import ExtractKeywords
 from datapipeline.models.papers import Papers
 from datapipeline.main import PapersPipeline
 from datapipeline.core.constants import MONGODB_ATLAS_CLUSTER_URI, MONGO_DB_NAME
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
 import logging
 
 
@@ -16,6 +18,27 @@ class PaperKeywordMatcher:
             mongo_uri=MONGODB_ATLAS_CLUSTER_URI,
             mongo_db_name=MONGO_DB_NAME
         )
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-pro",
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2
+        )
+        self.category_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "You are an expert in academic paper categorization. Your task is to analyze the content of a paper and suggest the most appropriate category for it. The category should be specific and relevant to the paper's content."
+            ),
+            ("human", "Here is the paper content:\n\n{content}\n\nPlease suggest the most appropriate category for this paper. Return only the category name, nothing else.")
+        ])
+        self.category_validation_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "You are an expert in academic paper categorization. Your task is to validate if a given category is appropriate for a paper's content. Return 'true' if the category is appropriate, 'false' otherwise."
+            ),
+            ("human", "Paper content:\n\n{content}\n\nCategory to validate: {category}\n\nIs this category appropriate for the paper? Return only 'true' or 'false'.")
+        ])
 
     def read_file_content(self, file_path: str) -> str:
         """
@@ -45,12 +68,49 @@ class PaperKeywordMatcher:
             print(f"Error reading file '{file_path}': {e}")
             return ""
 
-
     def fetch_papers_by_category(self, session: Session, category: str) -> list:
         """
         Fetches papers from the database for the given category.
         """
         return session.query(Papers).filter(Papers.category == category).all()
+
+    def generate_category_from_content(self, content: str) -> str:
+        """
+        Generates an appropriate category for the paper content using LLM.
+        """
+        try:
+            chain = self.category_prompt | self.llm
+            response = chain.invoke({"content": content})
+            
+            # Extract the category from the response
+            if isinstance(response, dict) and "content" in response:
+                category = response["content"].strip()
+            else:
+                category = str(response).strip()
+            
+            return category
+        except Exception as e:
+            logging.error(f"Error generating category: {e}")
+            return ""
+
+    def validate_category(self, content: str, category: str) -> bool:
+        """
+        Validates if a category is appropriate for the paper content using LLM.
+        """
+        try:
+            chain = self.category_validation_prompt | self.llm
+            response = chain.invoke({"content": content, "category": category})
+            
+            # Extract the validation result
+            if isinstance(response, dict) and "content" in response:
+                result = response["content"].strip().lower()
+            else:
+                result = str(response).strip().lower()
+            
+            return result == "true"
+        except Exception as e:
+            logging.error(f"Error validating category: {e}")
+            return False
 
     def generate_query_from_content(self, content: str) -> str:
         """
@@ -81,7 +141,8 @@ class PaperKeywordMatcher:
         Tries to find matching papers by:
         1. First trying the initial category
         2. If no matches, generating a query and trying other categories
-        3. If still no matches, processing new papers with the generated query
+        3. If still no matches, generating a new category and processing papers
+        4. If still no matches, validating the generated category with LLM
         
         Returns:
         - tuple: (matching_titles, category_used)
@@ -96,17 +157,13 @@ class PaperKeywordMatcher:
         if not content:
             return [], initial_category
 
-        generated_query = self.generate_query_from_content(content)
-        if not generated_query:
-            return [], initial_category
-
         # Try other categories with the generated query
         available_categories = self.get_available_categories()
         for category in available_categories:
             if category != initial_category:
                 # Process new papers for this category
                 self.pipeline.process_papers(
-                    query=generated_query,
+                    query=self.generate_query_from_content(content),
                     category=category,
                     batch_size=10,
                     sources=["arxiv", "elsevier", "springer"]
@@ -116,6 +173,24 @@ class PaperKeywordMatcher:
                 matching_titles = self.match_keywords(file_path, category)
                 if matching_titles:
                     return matching_titles, category
+
+        # If still no matches, generate a new category
+        generated_category = self.generate_category_from_content(content)
+        if generated_category:
+            # Validate the generated category
+            if self.validate_category(content, generated_category):
+                # Process papers with the new category
+                self.pipeline.process_papers(
+                    query=self.generate_query_from_content(content),
+                    category=generated_category,
+                    batch_size=10,
+                    sources=["arxiv", "elsevier", "springer"]
+                )
+                
+                # Try matching with the new category
+                matching_titles = self.match_keywords(file_path, generated_category)
+                if matching_titles:
+                    return matching_titles, generated_category
 
         return [], initial_category
 
@@ -148,18 +223,15 @@ class PaperKeywordMatcher:
             matching_titles = []
             for paper in papers:
                 if paper.keywords:  # Ensure the paper has keywords
-                    # print(f"Checking Paper: {paper.title}")
                     # Convert the stored keywords string into a set of individual keywords
                     db_keywords = set(
                             keyword.strip().strip("\"'").lower() for keyword in paper.keywords.split(",")
                         )
-                    # print(f"Database Keywords: {db_keywords}")
 
                     # Compare with extracted keywords
                     extracted_keywords_set = {
                         keyword.strip().strip("\"'").strip("*").lower() for keyword in extracted_keywords
                     }
-                    # print(f"Extracted Keywords: {extracted_keywords_set}")
 
                     if db_keywords.intersection({kw.lower() for kw in extracted_keywords_set}):
                         matching_titles.append(paper.title)
