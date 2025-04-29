@@ -200,10 +200,18 @@ class InTextCitationProcessor:
         
         else:
             raise ValueError(f"Unsupported citation style: {self.style}")
-    def find_relevant_papers(self, sentence: str):
+    def find_relevant_papers(self, sentence: str, return_all: bool = False):
         """
         Retrieve semantically relevant papers for a sentence using similarity search,
         then filter them by the threshold.
+        
+        Parameters:
+        - sentence (str): The sentence to find relevant papers for
+        - return_all (bool): If True, returns all papers above threshold; 
+                            If False, returns only the best matching paper
+        
+        Returns:
+        - List of document objects representing relevant papers
         """
         if not isinstance(sentence, str) or not sentence.strip():
             logging.warning(f"Skipping empty or invalid sentence: '{sentence}'")
@@ -243,19 +251,24 @@ class InTextCitationProcessor:
                     f"No documents found above threshold={self.threshold} for sentence: '{sentence}'"
                 )
             
-            return best_document
+            # Return all filtered results or just the best one
+            return filtered_results if return_all else best_document
 
         except Exception as e:
             logging.error(f"Error during similarity search for sentence '{sentence}': {e}")
             return []
 
-    def process_sentences(self, input_path: str, output_path: str):
+    def process_sentences(self, input_path: str, output_path: str, use_all_citations: bool = True):
         """
         Process each sentence in the document for in-text citations and add references.
 
         Parameters:
         - input_path (str): Path to the input document.
         - output_path (str): Path to save the output document.
+        - use_all_citations (bool): If True, use all relevant citations; if False, use only the best citation.
+        
+        Returns:
+        - Path to the updated document.
         """
         logging.info(f"Starting sentence-level processing for file: '{input_path}'")
 
@@ -293,7 +306,8 @@ class InTextCitationProcessor:
                     continue
 
                 try:
-                    relevant_papers = self.find_relevant_papers(sentence_text)
+                    # Use the return_all parameter to get all relevant papers or just the best one
+                    relevant_papers = self.find_relevant_papers(sentence_text, return_all=use_all_citations)
                     if not relevant_papers:
                         processed_sentences.append(sentence_text)
                         continue
@@ -339,7 +353,8 @@ class InTextCitationProcessor:
 
         # Save updated content back to the document
         for idx, updated_text in enumerate(updated_paragraphs):
-            doc.paragraphs[idx].text = updated_text
+            if idx < len(doc.paragraphs):  # Ensure we don't go out of bounds
+                doc.paragraphs[idx].text = updated_text
 
         # Add the references section
         self.add_references_section(doc, self.collection_name)

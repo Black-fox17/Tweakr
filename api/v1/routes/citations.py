@@ -60,11 +60,18 @@ async def process_paper(
     file: UploadFile = File(...),
     style: str = Form(...),
     category: str = Form(...),
+    use_all_citations: bool = Form(True)  # Default to using all citations
 ):
     """
     Route to process an academic paper, generate references and in-text citations
     based on the provided citation style and category. If no matches are found in the initial category,
     it will try to find matches in other categories by generating a query from the document content.
+    
+    Parameters:
+    - file: The document to process
+    - style: Citation style (APA, MLA, Chicago)
+    - category: The category to search for papers in
+    - use_all_citations: If True, use all relevant citations; if False, use only the best citation
     """
     # Create a temporary file to store the uploaded document
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
@@ -89,7 +96,11 @@ async def process_paper(
             # Process in-text citations and save the modified document
             intext_citation_processor = InTextCitationProcessor(style=style, collection_name=category_used)
             output_file_path = temp_file_path.replace(".docx", "_with_citations.docx")
-            modified_file_path = intext_citation_processor.process_sentences(temp_file_path, output_file_path)
+            modified_file_path = intext_citation_processor.process_sentences(
+                temp_file_path, 
+                output_file_path,
+                use_all_citations=use_all_citations
+            )
 
             # Return the modified document as a response
             return FileResponse(
@@ -98,10 +109,17 @@ async def process_paper(
                 filename="modified_paper.docx"
             )
         else:
-            return {"message": "No matching papers found after trying all available categories."}
+            return JSONResponse(
+                content={"message": "No matching papers found after trying all available categories."},
+                status_code=404
+            )
 
     except Exception as e:
-        return {"error": str(e)}
+        logging.error(f"Error processing paper: {e}")
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=500
+        )
 
     finally:
         # Ensure the file is not in use before deletion
@@ -150,42 +168,98 @@ async def citation_review_route(input_file: UploadFile = File(...)):
         }), 500
 
 @citations.post("/update-citations")
-async def update_citations_route(document_id, reviewed_citations):
+async def update_citations_route(
+    document_id: str = Form(...),
+    reviewed_citations: str = Form(...),
+    original_file: UploadFile = File(...)
+):
     """
-    Example route for updating document with reviewed citations.
+    Route for updating document with reviewed citations.
+    
+    Parameters:
+    - document_id (str): ID of the document being processed
+    - reviewed_citations (str): JSON string containing the reviewed citations
+    - original_file (UploadFile): The original document file
+    
+    Returns:
+    - FileResponse: The updated document with citations
     """
     try:
+        # Create a temporary file to store the uploaded document
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+            input_path = temp_file.name
+            # Save the uploaded file to the temporary file
+            temp_file.write(await original_file.read())
+        
+        # Create a path for the output document
+        output_path = input_path.replace(".docx", "_with_citations.docx")
+        
+        # Parse the reviewed citations JSON
+        citations_data = json.loads(reviewed_citations)
+        
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
-            style="APA",  # or any other preferred style
-            collection_name="academic_papers",
+            style="APA",  # This could be a parameter if needed
+            collection_name="corporate_governance",
             threshold=0.5,
             top_k=3
         )
 
-        # Provide paths for input and output documents
-        input_file = f"path/to/documents/{document_id}_input.docx"
-        output_file = f"path/to/documents/{document_id}_output.docx"
-
         # Update the document with reviewed citations
         updated_file_path = citation_processor.update_document_with_reviewed_citations(
-            input_path=input_file,
-            output_path=output_file,
-            reviewed_citations=reviewed_citations
+            input_path=input_path,
+            output_path=output_path,
+            reviewed_citations=citations_data
         )
 
-        return JSONResponse({
-            "status": "success",
-            "message": "Citations updated successfully",
-            "output_file": updated_file_path
-        }), 200
+        # Return the updated document as a response
+        return FileResponse(
+            updated_file_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"{document_id}_updated.docx"
+        )
 
+    except json.JSONDecodeError as e:
+        logging.error(f"Invalid JSON format for reviewed citations: {e}")
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": "Invalid JSON format for reviewed citations"
+            },
+            status_code=400
+        )
+    except FileNotFoundError as e:
+        logging.error(f"File not found: {e}")
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": "File not found"
+            },
+            status_code=404
+        )
     except Exception as e:
         logging.error(f"Error in update citations route: {e}")
-        return JSONResponse({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": str(e)
+            },
+            status_code=500
+        )
+    finally:
+        # Clean up temporary files
+        try:
+            if 'input_path' in locals():
+                Path(input_path).unlink(missing_ok=True)
+            if 'output_path' in locals():
+                # Only delete if we failed (since we're returning it otherwise)
+                if 'updated_file_path' not in locals():
+                    Path(output_path).unlink(missing_ok=True)
+        except PermissionError:
+            import time
+            time.sleep(1)  # Small delay before retrying
+            if 'input_path' in locals():
+                Path(input_path).unlink(missing_ok=True)
 
 @citations.post("/extract-content")
 async def extract_paper_content(file: UploadFile = File(...)):

@@ -48,7 +48,7 @@ def run_pipeline():
         
         # Run initial pipeline
         logging.info("Running initial pipeline")
-        manager.run_automated_pipeline(force_update=True)
+        manager.run_automated_pipeline(include_random=True)
         
         # Schedule regular runs
         logging.info("Starting scheduled pipeline runs")
