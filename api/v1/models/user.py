@@ -10,8 +10,6 @@ from api.v1.models.base_model import BaseTableModel
 
 class User(BaseTableModel):
     __tablename__ = "users"
-    first_name = Column(String, nullable=True)
-    last_name = Column(String, nullable=True)
     email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     email_verified = Column(Boolean, server_default=text("false"))
