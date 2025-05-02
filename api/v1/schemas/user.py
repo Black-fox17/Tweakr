@@ -42,20 +42,6 @@ class UserEmailSender(BaseModel):
     
 class UserCreate(BaseModel):
     """Schema to create a user"""
-    first_name: Annotated[
-        str, StringConstraints(
-            min_length=3,
-            max_length=30,
-            strip_whitespace=True
-        )
-    ]
-    last_name: Annotated[
-        str, StringConstraints(
-            min_length=3,
-            max_length=30,
-            strip_whitespace=True
-        )
-    ]
     email: EmailStr
     password: Annotated[
         str, StringConstraints(
