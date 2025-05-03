@@ -55,13 +55,13 @@ async def char_count(file: UploadFile = File(...),):
         return {"error": str(e)}
 
 
-@citations.post("/process-paper/")
-async def process_paper(
-    file: UploadFile = File(...),
-    style: str = Form(...),
-    category: str = Form(...),
-    use_all_citations: bool = Form(True)  # Default to using all citations
-):
+# @citations.post("/process-paper/")
+# async def process_paper(
+#     file: UploadFile = File(...),
+#     style: str = Form(...),
+#     category: str = Form(...),
+#     use_all_citations: bool = Form(True)  # Default to using all citations
+# ):
     """
     Route to process an academic paper, generate references and in-text citations
     based on the provided citation style and category. If no matches are found in the initial category,
