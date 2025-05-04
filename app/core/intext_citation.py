@@ -498,79 +498,80 @@ class InTextCitationProcessor:
             logging.error(f"Error processing document: {e}")
             raise
 
-    def update_document_with_reviewed_citations(self, 
-                                                input_path: str, 
-                                                output_path: str, 
-                                                reviewed_citations: List[Dict[str, Any]]) -> str:
+    def update_document_with_reviewed_citations(self, reviewed_citations: List[Dict[str, Any]]) -> List[str]:
         """
-        Update the document based on reviewed citations.
+        Process reviewed citations and return formatted references.
 
         Parameters:
-        - input_path (str): Path to the input document.
-        - output_path (str): Path to save the updated document.
         - reviewed_citations (List[Dict]): List of citations with their review status.
 
         Returns:
-        - Path to the updated document.
+        - List[str]: List of formatted references.
         """
-        logging.info(f"Updating document with reviewed citations")
+        logging.info("Processing reviewed citations for formatted references")
 
-        # Load the original document
-        doc = Document(input_path)
+        formatted_references = []
+        processed_titles = set()  # To avoid duplicate references
 
-        # Create a mapping of accepted citations
-        accepted_citations = {
-            citation['id']: self.format_citation(
-                citation['paper_details']['authors'], 
-                citation['paper_details']['year']
-            )
-            for citation in reviewed_citations 
-            if citation.get('status') == 'accepted'
-        }
-
-        # Process paragraphs
-        for para_idx, para in enumerate(doc.paragraphs):
-            paragraph_text = para.text.strip()
-
-            if not paragraph_text or self.is_dynamic_heading(para):
+        for citation in reviewed_citations:
+            if citation.get('status') != 'accepted':
                 continue
 
-            # Tokenize paragraph into sentences
-            sentences = list(self.nlp(paragraph_text).sents)
-            processed_sentences = []
-
-            for sent_idx, sent in enumerate(sentences, start=1):
-                sentence_text = sent.text.strip()
-
-                # Check if this sentence has any reviewed citations
-                sentence_citations = [
-                    citation for citation in reviewed_citations 
-                    if (citation['metadata']['paragraph_index'] == para_idx + 1 and 
-                        citation['metadata']['sentence_index'] == sent_idx)
-                ]
-
-                if sentence_citations:
-                    # Remove the period from the sentence
-                    base_sentence = sentence_text.rstrip('.')
-                    
-                    # Add accepted citations
-                    accepted_cites = [
-                        accepted_citations[cite['id']] 
-                        for cite in sentence_citations 
-                        if cite['status'] == 'accepted'
-                    ]
-
-                    if accepted_cites:
-                        sentence_text = f"{base_sentence} {' '.join(accepted_cites)}."
+            paper_details = citation.get('paper_details', {})
+            title = paper_details.get('title')
+            
+            # Skip if we've already processed this title
+            if title in processed_titles:
+                continue
+            
+            processed_titles.add(title)
+            
+            # Get authors and year
+            authors = paper_details.get('authors', ["Unknown"])
+            year = paper_details.get('year', "n.d.")
+            url = paper_details.get('url', "")
+            
+            # Format the reference
+            if self.style == "APA":
+                # Format authors
+                if len(authors) == 1:
+                    author_str = f"{authors[0].split()[0][0]}., {authors[0].split()[-1]}"
+                else:
+                    author_str = f"{authors[0].split()[0][0]}., {authors[0].split()[-1]} et al."
                 
-                processed_sentences.append(sentence_text)
+                # Format the reference
+                reference = f'{author_str} ({year}). "{title}"'
+                if url:
+                    reference += f'. Retrieved from {url}'
+                
+                formatted_references.append(reference)
+            
+            elif self.style == "MLA":
+                # Format authors
+                if len(authors) == 1:
+                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}."
+                else:
+                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}, et al."
+                
+                # Format the reference
+                reference = f'{author_str} "{title}"'
+                if url:
+                    reference += f'. Available at {url}'
+                
+                formatted_references.append(reference)
+            
+            elif self.style == "Chicago":
+                # Format authors
+                if len(authors) == 1:
+                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}."
+                else:
+                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}, et al."
+                
+                # Format the reference
+                reference = f'{author_str} "{title}"'
+                if url:
+                    reference += f'. {url}'
+                
+                formatted_references.append(reference)
 
-            # Reconstruct the paragraph
-            final_paragraph_text = " ".join(processed_sentences)
-            doc.paragraphs[para_idx].text = final_paragraph_text
-
-        # Save the updated document
-        doc.save(output_path)
-        logging.info(f"Updated document saved at: '{output_path}'")
-
-        return output_path
+        return formatted_references

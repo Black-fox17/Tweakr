@@ -169,31 +169,18 @@ async def citation_review_route(input_file: UploadFile = File(...)):
 
 @citations.post("/update-citations")
 async def update_citations_route(
-    document_id: str = Form(...),
-    reviewed_citations: str = Form(...),
-    original_file: UploadFile = File(...)
+    reviewed_citations: str = Form(...)
 ):
     """
-    Route for updating document with reviewed citations.
+    Route for processing reviewed citations and returning formatted references.
     
     Parameters:
-    - document_id (str): ID of the document being processed
     - reviewed_citations (str): JSON string containing the reviewed citations
-    - original_file (UploadFile): The original document file
     
     Returns:
-    - FileResponse: The updated document with citations
+    - JSONResponse: List of formatted references
     """
     try:
-        # Create a temporary file to store the uploaded document
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-            input_path = temp_file.name
-            # Save the uploaded file to the temporary file
-            temp_file.write(await original_file.read())
-        
-        # Create a path for the output document
-        output_path = input_path.replace(".docx", "_with_citations.docx")
-        
         # Parse the reviewed citations JSON
         citations_data = json.loads(reviewed_citations)
         
@@ -205,18 +192,18 @@ async def update_citations_route(
             top_k=3
         )
 
-        # Update the document with reviewed citations
-        updated_file_path = citation_processor.update_document_with_reviewed_citations(
-            input_path=input_path,
-            output_path=output_path,
+        # Get formatted references
+        formatted_references = citation_processor.update_document_with_reviewed_citations(
             reviewed_citations=citations_data
         )
 
-        # Return the updated document as a response
-        return FileResponse(
-            updated_file_path,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=f"{document_id}_updated.docx"
+        # Return the formatted references
+        return JSONResponse(
+            content={
+                "status": "success",
+                "references": formatted_references
+            },
+            status_code=200
         )
 
     except json.JSONDecodeError as e:
@@ -228,15 +215,6 @@ async def update_citations_route(
             },
             status_code=400
         )
-    except FileNotFoundError as e:
-        logging.error(f"File not found: {e}")
-        return JSONResponse(
-            content={
-                "status": "error",
-                "message": "File not found"
-            },
-            status_code=404
-        )
     except Exception as e:
         logging.error(f"Error in update citations route: {e}")
         return JSONResponse(
@@ -246,20 +224,6 @@ async def update_citations_route(
             },
             status_code=500
         )
-    finally:
-        # Clean up temporary files
-        try:
-            if 'input_path' in locals():
-                Path(input_path).unlink(missing_ok=True)
-            if 'output_path' in locals():
-                # Only delete if we failed (since we're returning it otherwise)
-                if 'updated_file_path' not in locals():
-                    Path(output_path).unlink(missing_ok=True)
-        except PermissionError:
-            import time
-            time.sleep(1)  # Small delay before retrying
-            if 'input_path' in locals():
-                Path(input_path).unlink(missing_ok=True)
 
 @citations.post("/extract-content")
 async def extract_paper_content(file: UploadFile = File(...)):
