@@ -159,7 +159,6 @@ input_file: UploadFile = File(...)):
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
             "citations": citation_review_data["citations"],
-            "style":style
         }
 
     except Exception as e:
