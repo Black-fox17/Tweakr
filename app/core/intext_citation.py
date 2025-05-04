@@ -478,10 +478,10 @@ class InTextCitationProcessor:
                                     "doi": metadata.get("doi", "")
                                 },
                                 "status": "pending_review",
+                                "page_number": f"{current_page}({sent_idx})" ,
                                 "metadata": {
                                     "paragraph_index": para_idx,
                                     "sentence_index": sent_idx,
-                                    "page_number": f"{current_page}({sent_idx})"  # Add page number in format "page(sentence)"
                                 }
                             }
 
