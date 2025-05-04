@@ -398,6 +398,8 @@ class InTextCitationProcessor:
                 }
             }
 
+            # Track current page number
+            current_page = 1
             for para_idx, para in enumerate(doc.paragraphs, start=1):
                 paragraph_text = para.text.strip()
 
@@ -462,8 +464,8 @@ class InTextCitationProcessor:
                             db_metadata = self.fetch_metadata_from_db(title)
                             authors = db_metadata.get("authors", ["Unknown"])
                             year = db_metadata.get("published_date", "n.d.")
-
-                            # Prepare citation details
+ 
+                            # Prepare citation details with page number
                             citation_id = str(uuid.uuid4())
                             citation_entry = {
                                 "id": citation_id,
@@ -478,7 +480,8 @@ class InTextCitationProcessor:
                                 "status": "pending_review",
                                 "metadata": {
                                     "paragraph_index": para_idx,
-                                    "sentence_index": sent_idx
+                                    "sentence_index": sent_idx,
+                                    "page_number": f"{current_page}({sent_idx})"  # Add page number in format "page(sentence)"
                                 }
                             }
 
@@ -487,6 +490,9 @@ class InTextCitationProcessor:
 
                     except Exception as e:
                         logging.error(f"Error processing sentence '{sentence_text}': {e}")
+
+                # Increment page number after each paragraph
+                current_page += 1
 
             # Log final diagnostic information
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
