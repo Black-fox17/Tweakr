@@ -526,49 +526,56 @@ class InTextCitationProcessor:
             
             processed_titles.add(title)
             
-            # Get authors and year
+            # Get authors, year, and page number
             authors = paper_details.get('authors', ["Unknown"])
             year = paper_details.get('year', "n.d.")
             url = paper_details.get('url', "")
+            page_number = paper_details.get('page_number', "")
             
             # Format the reference
             if self.style == "APA":
-                # Format authors
+                # Format authors with full names
                 if len(authors) == 1:
-                    author_str = f"{authors[0].split()[0][0]}., {authors[0].split()[-1]}"
+                    author_str = f"{authors[0]}"
                 else:
-                    author_str = f"{authors[0].split()[0][0]}., {authors[0].split()[-1]} et al."
+                    author_str = f"{authors[0]} et al."
                 
-                # Format the reference
+                # Format the reference with page number
                 reference = f'{author_str} ({year}). "{title}"'
+                if page_number:
+                    reference += f' {page_number}'
                 if url:
                     reference += f'. Retrieved from {url}'
                 
                 formatted_references.append(reference)
             
             elif self.style == "MLA":
-                # Format authors
+                # Format authors with full names
                 if len(authors) == 1:
-                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}."
+                    author_str = f"{authors[0]}"
                 else:
-                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}, et al."
+                    author_str = f"{authors[0]}, et al."
                 
-                # Format the reference
+                # Format the reference with page number
                 reference = f'{author_str} "{title}"'
+                if page_number:
+                    reference += f' {page_number}'
                 if url:
                     reference += f'. Available at {url}'
                 
                 formatted_references.append(reference)
             
             elif self.style == "Chicago":
-                # Format authors
+                # Format authors with full names
                 if len(authors) == 1:
-                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}."
+                    author_str = f"{authors[0]}"
                 else:
-                    author_str = f"{authors[0].split()[-1]}, {authors[0].split()[0][0]}, et al."
+                    author_str = f"{authors[0]}, et al."
                 
-                # Format the reference
+                # Format the reference with page number
                 reference = f'{author_str} "{title}"'
+                if page_number:
+                    reference += f' {page_number}'
                 if url:
                     reference += f'. {url}'
                 

@@ -131,7 +131,8 @@ async def char_count(file: UploadFile = File(...),):
             Path(temp_file_path).unlink(missing_ok=True)
 
 @citations.post("/get-citation")
-async def citation_review_route(input_file: UploadFile = File(...)):
+async def citation_review_route(style: str,
+input_file: UploadFile = File(...)):
     """
     Example route for handling citation review process.
     """
@@ -143,7 +144,7 @@ async def citation_review_route(input_file: UploadFile = File(...)):
     try:
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
-            style="APA",  # or any other preferred style
+            style=style,  # or any other preferred style
             collection_name="corporate_governance",
             threshold=0.0,
             top_k=5
@@ -157,7 +158,8 @@ async def citation_review_route(input_file: UploadFile = File(...)):
             "status": "success",
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
-            "citations": citation_review_data["citations"]
+            "citations": citation_review_data["citations"],
+            "style":style
         }
 
     except Exception as e:
@@ -186,7 +188,7 @@ async def update_citations_route(
         
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
-            style="APA",  # This could be a parameter if needed
+            style=reviewed_citations.style,  # This could be a parameter if needed
             collection_name="corporate_governance",
             threshold=0.5,
             top_k=3
