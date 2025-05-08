@@ -168,10 +168,14 @@ input_file: UploadFile = File(...)):
             "message": str(e)
         }), 500
 
+from pydantic import BaseModel
+
+class UpdateCitation(BaseModel):
+    style:str
+    reviewed_citations: List[Any]
 @citations.post("/update-citations")
 async def update_citations_route(
-    style:str,
-    reviewed_citations: List[Any]
+    updateData: UpdateCitation
 ):
     """
     Route for processing reviewed citations and returning formatted references.
