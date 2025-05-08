@@ -168,11 +168,33 @@ input_file: UploadFile = File(...)):
             "message": str(e)
         }), 500
 
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
+
+class PaperDetails(BaseModel):
+    title: str
+    authors: List[str]
+    year: str
+    url: HttpUrl
+    doi: str
+
+
+class Metadata(BaseModel):
+    paragraph_index: int
+    sentence_index: int
+
+
+class ReviewedCitation(BaseModel):
+    id: str
+    original_sentence: str
+    paper_details: PaperDetails
+    status: str
+    page_number: str
+    metadata: Metadata
+
 
 class UpdateCitation(BaseModel):
-    style:str
-    reviewed_citations: List[Any]
+    style: str
+    reviewed_citations: List[ReviewedCitation]
 @citations.post("/update-citations")
 async def update_citations_route(
     updateData: UpdateCitation
