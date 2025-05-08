@@ -171,7 +171,7 @@ input_file: UploadFile = File(...)):
 @citations.post("/update-citations")
 async def update_citations_route(
     style:str,
-    reviewed_citations: str = Form(...)
+    reviewed_citations: List[Any]
 ):
     """
     Route for processing reviewed citations and returning formatted references.
