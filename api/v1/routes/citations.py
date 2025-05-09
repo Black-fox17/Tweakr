@@ -210,11 +210,11 @@ async def update_citations_route(
     """
     try:
         # Parse the reviewed citations JSON
-        citations_data = json.loads(reviewed_citations)
+        citations_data = json.loads(updateData.reviewed_citations)
         
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
-            style=style,  # This could be a parameter if needed
+            style=updateData.style,  # This could be a parameter if needed
             collection_name="corporate_governance",
             threshold=0.5,
             top_k=3
