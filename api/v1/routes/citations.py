@@ -146,7 +146,7 @@ input_file: UploadFile = File(...)):
         citation_processor = InTextCitationProcessor(
             style="APA",  # or any other preferred style
             collection_name="corporate_governance",
-            threshold=0.0,
+            threshold=0.5,
             top_k=5
         )
 
