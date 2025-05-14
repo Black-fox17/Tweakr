@@ -159,3 +159,4 @@ passlib
 bcrypt
 alembic
 authlib
+docx2pdf
