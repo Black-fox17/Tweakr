@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     status,
+    HTTPException
 )
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from api.v1.services.subscription import subscription_service
 from api.db.database import get_db
 from api.v1.services.user import user_service
 from api.v1.schemas.subscription import CreateSubscriptionSchema, CreateSubscriptionResponse
+import httpx
+from decouple import config
 
 
 subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
@@ -34,6 +37,30 @@ subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
 #         },
 #     )
 
+FLW_SECRET_KEY = config("FLW_SECRET_KEY")
+@subscription.get("/verify-payment/{transaction_id}")
+async def verify_payment(transaction_id: int):
+    url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
+    headers = {
+        "Authorization": f"Bearer {FLW_SECRET_KEY}"
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=500, detail="Failed to reach Flutterwave")
+
+    result = response.json()
+
+    if result["status"] == "success" and result["data"]["status"] == "successful":
+        return {
+            "status": "success",
+            "message": "Payment verified successfully",
+            "data": result["data"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Payment not successful")
 
 @subscription.post("/subscriptions", response_model=CreateSubscriptionResponse)
 async def create_new_subscription(

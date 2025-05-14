@@ -11,6 +11,7 @@ from app.core.intext_citation import InTextCitationProcessor
 from app.core.paper_matcher import PaperKeywordMatcher
 from app.auth.helpers import get_current_active_user
 from app.core.wordcount import count_words_in_docx
+from app.core.category import get_document_category
 from datapipeline.core.database import get_session_with_ctx_manager
 from datapipeline.models.papers import Papers
 import logging
@@ -130,6 +131,16 @@ async def char_count(file: UploadFile = File(...),):
             time.sleep(1)  # Small delay before retrying
             Path(temp_file_path).unlink(missing_ok=True)
 
+@citations.post("/get-category")
+async def document_category(input_file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+        temp_file_path = temp_file.name
+        # Save the uploaded file to the temporary file
+        temp_file.write(await input_file.read())
+
+    valid_category = get_document_category(temp_file_path)
+    return{"category": valid_category}
+    
 @citations.post("/get-citation")
 async def citation_review_route(
 input_file: UploadFile = File(...)):
@@ -145,8 +156,8 @@ input_file: UploadFile = File(...)):
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
             style="APA",  # or any other preferred style
-            collection_name="corporate_governance",
-            threshold=0.5,
+            collection_name="healthcare_management",
+            threshold=0.0,
             top_k=5
         )
 
