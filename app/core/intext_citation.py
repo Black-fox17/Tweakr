@@ -202,7 +202,7 @@ class InTextCitationProcessor:
         
         else:
             raise ValueError(f"Unsupported citation style: {self.style}")
-    def find_relevant_papers(self, sentence: str, return_all: bool = True):
+    def find_relevant_papers(self, sentence: str, return_all: bool = False):
         """
         Retrieve semantically relevant papers for a sentence using similarity search,
         then filter them by the threshold.
@@ -309,7 +309,7 @@ class InTextCitationProcessor:
 
                 try:
                     # Use the return_all parameter to get all relevant papers or just the best one
-                    relevant_papers = self.find_relevant_papers(sentence_text, return_all=use_all_citations)
+                    relevant_papers = self.find_relevant_papers(sentence_text)
                     if not relevant_papers:
                         processed_sentences.append(sentence_text)
                         continue
