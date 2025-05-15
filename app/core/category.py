@@ -121,7 +121,7 @@ def get_document_category(file_path: str) -> str | None:
         
         print(f"Converting DOCX to PDF: {os.path.basename(file_path)} -> {os.path.basename(pdf_path)}...")
         # Convert the DOCX to PDF
-        pdf_path = convert_to_pdf(file_path, pdf_path)
+        pdf_path = convert_to_pdf(file_path)
         
         if not os.path.exists(pdf_path):
             print(f"Error: PDF conversion failed. No file was created at '{pdf_path}'.")
