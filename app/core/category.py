@@ -1,7 +1,5 @@
 import google.generativeai as genai
 import os
-import tempfile
-import subprocess
 import logging
 from typing import Optional
 from decouple import config, UndefinedValueError
@@ -77,62 +75,11 @@ machine_learning
 If the document is about the principles of physics, you must return:
 physics
 """
+from docx import Document
 
-def convert_to_pdf(docx_path: str) -> Optional[str]:
-    """
-    Converts a DOCX file to PDF using LibreOffice.
-    
-    Args:
-        docx_path: Path to the DOCX file
-        
-    Returns:
-        Path to the generated PDF file or None if conversion failed
-    """
-    if not os.path.exists(docx_path):
-        logger.error(f"DOCX file not found: {docx_path}")
-        return None
-        
-    temp_dir = tempfile.gettempdir()
-    file_name = os.path.splitext(os.path.basename(docx_path))[0]
-    pdf_path = os.path.join(temp_dir, f"{file_name}.pdf")
-    
-    try:
-        # Construct and execute the LibreOffice command
-        command = [
-            "libreoffice",
-            "--headless",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            temp_dir,
-            docx_path,
-        ]
-        logger.info(f"Converting DOCX to PDF: {os.path.basename(docx_path)}")
-        logger.debug(f"Command: {' '.join(command)}")
-        
-        result = subprocess.run(
-            command, 
-            check=True, 
-            capture_output=True, 
-            text=True
-        )
-        
-        if not os.path.exists(pdf_path):
-            logger.error("PDF conversion completed but file not found")
-            return None
-            
-        logger.info(f"PDF conversion successful: {os.path.basename(pdf_path)}")
-        return pdf_path
-        
-    except subprocess.CalledProcessError as e:
-        logger.error(f"LibreOffice conversion failed: {e.stderr}")
-        return None
-    except FileNotFoundError:
-        logger.error("LibreOffice not found. Ensure it's installed and in your PATH.")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error during PDF conversion: {str(e)}")
-        return None
+def read_docx_text(file_path):
+    doc = Document(file_path)
+    return "\n".join(para.text for para in doc.paragraphs if para.text.strip())
 
 def get_document_category(file_path: str) -> Optional[str]:
     """
@@ -164,17 +111,17 @@ def get_document_category(file_path: str) -> Optional[str]:
     
     try:
         # Convert DOCX to PDF
-        pdf_path = convert_to_pdf(file_path)
-        if not pdf_path:
+        texts = read_docx_text(file_path)
+        if not texts:
             return None
         
         # Upload the PDF to Gemini
-        logger.info(f"Uploading PDF to Gemini: {os.path.basename(pdf_path)}")
-        uploaded_file_ref = genai.upload_file(path=pdf_path)
-        logger.info(f"File uploaded with reference: {uploaded_file_ref.name}")
+        # logger.info(f"Uploading PDF to Gemini: {os.path.basename(pdf_path)}")
+        # uploaded_file_ref = genai.upload_file(path=pdf_path)
+        # logger.info(f"File uploaded with reference: {uploaded_file_ref.name}")
         
         # Prepare the classification request
-        content_parts = [get_classification_prompt(), uploaded_file_ref]
+        content_parts = [get_classification_prompt() + texts]
         
         safety_settings = [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
@@ -224,18 +171,6 @@ def get_document_category(file_path: str) -> Optional[str]:
         logger.error(f"Error processing document: {str(e)}")
         return None
     
-    finally:
-        # Clean up temporary files and resources
-        try:
-            if pdf_path and os.path.exists(pdf_path):
-                os.remove(pdf_path)
-                logger.debug(f"Deleted temporary PDF: {os.path.basename(pdf_path)}")
-            
-            if uploaded_file_ref and hasattr(uploaded_file_ref, 'name'):
-                genai.delete_file(uploaded_file_ref.name)
-                logger.debug(f"Deleted uploaded file: {uploaded_file_ref.name}")
-        except Exception as cleanup_error:
-            logger.warning(f"Error during cleanup: {str(cleanup_error)}")
 
 def main():
     """Main function to demonstrate usage."""
