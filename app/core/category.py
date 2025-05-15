@@ -1,7 +1,7 @@
 import google.generativeai as genai
 import os
 from decouple import config
-from docx2pdf import convert
+import subprocess
 import tempfile
 
 # --- Configuration & Initialization ---
@@ -60,6 +60,37 @@ If the document is about the principles of physics, you must return:
 physics
 """
 
+def convert_to_pdf(docx_file):
+    """Converts a DOCX file to PDF using LibreOffice."""
+    temp_dir = tempfile.gettempdir()
+    file_name = os.path.splitext(os.path.basename(docx_file))[0]
+    pdf_file = os.path.join(temp_dir, f"{file_name}.pdf")
+
+    try:
+        # Ensure LibreOffice is correctly installed and in the PATH
+        command = [
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            temp_dir,
+            docx_file,
+        ]
+        print(f"Executing command: {' '.join(command)}") # Debugging
+        subprocess.run(command, check=True, capture_output=True, text=True)
+
+        return pdf_file  # Return the path to the generated PDF
+    except subprocess.CalledProcessError as e:
+        print(f"Error during LibreOffice conversion: {e.stderr}")
+        return None
+    except FileNotFoundError:
+        print("Error: LibreOffice not found.  Ensure it's installed and in your PATH.")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred during conversion: {e}")
+        return None
+    
 def get_document_category(file_path: str) -> str | None:
     """
     Converts a DOCX file to PDF, uploads it to Gemini and determines its category.
@@ -90,7 +121,7 @@ def get_document_category(file_path: str) -> str | None:
         
         print(f"Converting DOCX to PDF: {os.path.basename(file_path)} -> {os.path.basename(pdf_path)}...")
         # Convert the DOCX to PDF
-        convert(file_path, pdf_path)
+        pdf_path = convert_to_pdf(file_path, pdf_path)
         
         if not os.path.exists(pdf_path):
             print(f"Error: PDF conversion failed. No file was created at '{pdf_path}'.")
