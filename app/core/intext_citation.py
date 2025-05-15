@@ -260,7 +260,7 @@ class InTextCitationProcessor:
             logging.error(f"Error during similarity search for sentence '{sentence}': {e}")
             return []
 
-    def process_sentences(self, input_path: str, output_path: str, use_all_citations: bool = True):
+    def process_sentences(self, input_path: str, output_path: str, use_all_citations: bool = False):
         """
         Process each sentence in the document for in-text citations and add references.
 
