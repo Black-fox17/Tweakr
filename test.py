@@ -110,7 +110,7 @@ class InTextCitationProcessor:
                 top_k=self.top_k
             )
             logging.debug(f"Raw similarity search returned {len(results)} documents for sentence: '{sentence}'")
-
+ 
             # Filter by threshold
             filtered_results = []
             best_document = []

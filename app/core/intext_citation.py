@@ -365,17 +365,19 @@ class InTextCitationProcessor:
         logging.info(f"Processed document saved at: '{output_path}'")
         return output_path
     
-    def prepare_citations_for_review(self, input_path: str) -> Dict[str, Any]:
+    def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 100, random_sample: bool = True) -> Dict[str, Any]:
         """
         Prepare in-text citations for frontend review with unique identifiers.
 
         Parameters:
         - input_path (str): Path to the input document.
+        - max_paragraphs (int): Maximum number of paragraphs to process (default: 100).
+        - random_sample (bool): Whether to randomly sample paragraphs instead of taking the first ones (default: True).
 
         Returns:
         - Dict containing document-level and citation-level information for review.
         """
-        logging.info(f"Preparing citations for review from file: '{input_path}'")
+        logging.info(f"Preparing citations for review from file: '{input_path}' (max paragraphs: {max_paragraphs}, random sampling: {random_sample})")
 
         if not os.path.exists(input_path):
             raise FileNotFoundError(f"Input file '{input_path}' does not exist.")
@@ -385,7 +387,23 @@ class InTextCitationProcessor:
             doc = Document(input_path)
             
             # Diagnostic logging for document structure
-            logging.info(f"Document paragraphs count: {len(doc.paragraphs)}")
+            total_paragraphs = len(doc.paragraphs)
+            logging.info(f"Document paragraphs count: {total_paragraphs}")
+            
+            # Calculate actual paragraphs to process (min of total or max_paragraphs)
+            paragraphs_to_process = min(total_paragraphs, max_paragraphs)
+            logging.info(f"Will process {paragraphs_to_process} out of {total_paragraphs} paragraphs")
+            
+            # Select paragraphs to process (either random or sequential)
+            if random_sample and total_paragraphs > paragraphs_to_process:
+                import random
+                paragraph_indices = sorted(random.sample(range(total_paragraphs), paragraphs_to_process))
+                paragraphs_to_process_list = [doc.paragraphs[i] for i in paragraph_indices]
+                logging.info(f"Randomly selected {len(paragraph_indices)} paragraphs for processing")
+            else:
+                paragraphs_to_process_list = doc.paragraphs[:paragraphs_to_process]
+                paragraph_indices = list(range(paragraphs_to_process))
+                logging.info(f"Sequentially selected first {paragraphs_to_process} paragraphs")
             
             # Prepare citation review data
             citation_review_data = {
@@ -396,25 +414,27 @@ class InTextCitationProcessor:
                     "processed_paragraphs": 0,
                     "processed_sentences": 0,
                     "skipped_paragraphs": [],
-                    "empty_sentences": []
+                    "empty_sentences": [],
+                    "selected_paragraph_indices": paragraph_indices
                 }
             }
 
             # Track current page number
             current_page = 1
-            for para_idx, para in enumerate(doc.paragraphs, start=1):
+            for para_idx, para in enumerate(paragraphs_to_process_list):
+                # Get the actual document index for this paragraph
+                actual_para_idx = paragraph_indices[para_idx] + 1 if random_sample else para_idx + 1
                 paragraph_text = para.text.strip()
 
-                # Diagnostic logging for paragraph content
-                logging.debug(f"Paragraph {para_idx} text: '{paragraph_text}'")
-
+                # Skip processing empty paragraphs early
                 if not paragraph_text:
-                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(para_idx)
+                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(actual_para_idx)
                     continue
 
+                # Skip headings early
                 if self.is_dynamic_heading(para):
                     logging.info(f"Skipping heading paragraph: '{paragraph_text}'")
-                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(para_idx)
+                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(actual_para_idx)
                     continue
 
                 # Increment processed paragraphs
@@ -430,9 +450,7 @@ class InTextCitationProcessor:
                 for sent_idx, sent in enumerate(sentences, start=1):
                     sentence_text = sent.text.strip()
 
-                    # Track processed sentences
-                    citation_review_data["diagnostics"]["processed_sentences"] += 1
-
+                    # Skip empty sentences early
                     if not sentence_text:
                         citation_review_data["diagnostics"]["empty_sentences"].append({
                             "paragraph": para_idx,
@@ -440,17 +458,14 @@ class InTextCitationProcessor:
                         })
                         continue
 
+                    # Track processed sentences
+                    citation_review_data["diagnostics"]["processed_sentences"] += 1
+
                     try:
-                        # Diagnostic logging for semantic search
-                        logging.debug(f"Performing semantic search for sentence: '{sentence_text}'")
-                        
+                        # Find relevant papers for the sentence
                         relevant_papers = self.find_relevant_papers(sentence_text)
                         
-                        # Log semantic search results
-                        logging.debug(f"Semantic search for sentence returned {len(relevant_papers)} papers")
-
                         if not relevant_papers:
-                            logging.debug(f"No relevant papers found for sentence: '{sentence_text}'")
                             continue
 
                         # Prepare citations for each relevant paper
@@ -482,8 +497,9 @@ class InTextCitationProcessor:
                                 "status": "pending_review",
                                 "page_number": f"{current_page}({sent_idx})" ,
                                 "metadata": {
-                                    "paragraph_index": para_idx,
+                                    "paragraph_index": actual_para_idx,
                                     "sentence_index": sent_idx,
+                                    "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
                                 }
                             }
 
@@ -498,13 +514,18 @@ class InTextCitationProcessor:
 
             # Log final diagnostic information
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
+            logging.info(f"Processed {citation_review_data['diagnostics']['processed_paragraphs']} paragraphs")
+            if random_sample:
+                logging.info(f"Paragraph sampling method: Random sampling from {total_paragraphs} paragraphs")
+            else:
+                logging.info(f"Paragraph sampling method: Sequential (first {paragraphs_to_process} paragraphs)")
             logging.info(f"Diagnostics: {json.dumps(citation_review_data['diagnostics'], indent=2)}")
 
             return citation_review_data
 
         except Exception as e:
             logging.error(f"Error processing document: {e}")
-            raise 
+            raise
     def update_document_with_reviewed_citations(self, reviewed_citations: List[Dict[str, Any]]) -> List[str]:
         """
         Process reviewed citations and return formatted references.
