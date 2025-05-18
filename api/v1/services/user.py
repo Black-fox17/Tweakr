@@ -15,7 +15,7 @@ from api.core.base.services import Service
 from api.db.database import get_db
 
 from api.utils.db_validators import check_model_existence
-from api.v1.models import User
+from api.v1.models import User, Subscription
 from api.v1.schemas import user
 from api.utils.settings import settings
 
@@ -71,6 +71,17 @@ class UserService(Service):
         )
 
         return self.all_users_response(all_users, total_users, page, per_page)
+    
+    def fetch_subscription(self,db:Session, user_id: str):
+        try:
+            user_subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+            if user_subscribed:
+                return True
+            else:
+                return False
+        except Exception as e:
+            raise HTTPException(status_code=404, detail="User not found")
+
 
     def all_users_response(
         self, users: list, total_users: int, page: int, per_page: int

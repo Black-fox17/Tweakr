@@ -56,6 +56,7 @@ def register(
     # Create access and refresh tokens
     access_token = user_service.create_access_token(user_id=user.id)
     refresh_token = user_service.create_refresh_token(user_id=user.id)
+    user_subscribed = user_service.fetch_subscription(db,user.id)
 
     response = auth_response(
         status_code=201,
@@ -64,7 +65,8 @@ def register(
         data={
             "user": jsonable_encoder(
                 user, exclude=["password", "is_deleted", "is_verified", "updated_at"]
-            )
+            ),
+             "Subscribed":user_subscribed
         },
     )
 
@@ -94,6 +96,7 @@ def login(request: Request, login_request: LoginRequest, background_tasks: Backg
     # Generate access and refresh tokens
     access_token = user_service.create_access_token(user_id=user.id)
     refresh_token = user_service.create_refresh_token(user_id=user.id)
+    user_subscribed = user_service.fetch_subscription(db,user.id)
 
     response = auth_response(
         status_code=200,
@@ -102,7 +105,8 @@ def login(request: Request, login_request: LoginRequest, background_tasks: Backg
         data={
             "user": jsonable_encoder(
                 user, exclude=["password", "is_deleted", "is_verified", "updated_at"]
-            )
+            ),
+            "Subscribed":user_subscribed
         },
     )
 
