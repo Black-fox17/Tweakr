@@ -14,39 +14,27 @@ from api.v1.services.user import user_service
 from api.v1.schemas.subscription import CreateSubscriptionSchema, CreateSubscriptionResponse
 import httpx
 from decouple import config
+import requests
 
 
 subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
 
 
-# @bill_plan.get("/{organisation_id}/billing-plans", response_model=GetsubscriptionListResponse)
-# async def retrieve_all_subscriptions(
-#     organisation_id: str, db: Session = Depends(get_db)
-# ):
-#     """
-#     Endpoint to get all billing plans
-#     """
-
-#     plans = subscription_service.fetch_all(db=db, organisation_id=organisation_id)
-
-#     return success_response(
-#         status_code=status.HTTP_200_OK,
-#         message="Plans fetched successfully",
-#         data={
-#             "plans": jsonable_encoder(plans),
-#         },
-#     )
-
 FLW_SECRET_KEY = config("FLW_SECRET_KEY")
-@subscription.get("/verify-payment/{transaction_id}")
-async def verify_payment(transaction_id: int):
+
+@subscription.get("/verify-payment-sync/{transaction_id}")
+async def verify_payment_sync(transaction_id: int):
+    """
+    Synchronous endpoint to verify payment using requests library.
+    """
     url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
     headers = {
-        "Authorization": f"Bearer {FLW_SECRET_KEY}"
+        "accept": "application/json",
+        "Authorization": f"Bearer {FLW_SECRET_KEY}",
+        "Content-Type": "application/json"
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
+    response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Failed to reach Flutterwave")

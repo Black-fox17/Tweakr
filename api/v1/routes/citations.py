@@ -30,8 +30,17 @@ async def get_categories():
         with get_session_with_ctx_manager() as session:
             categories = session.query(Papers.category).distinct().order_by(Papers.category).all()
             # Standardize categories and remove duplicates
-            standardized_categories = [category[0] for category in categories if category[0]]
+            standardized_categories = [category[0].lower().replace(" ", "_") for category in categories if category[0]]
             unique_categories = sorted(list(set(standardized_categories)))
+
+            # Ensure "healthcare_management" is unified
+            if "healthcare_management" in unique_categories:
+                unique_categories = [cat if cat != "healthcare_management" else "healthcare_management" for cat in unique_categories]
+
+            # Add "others" category
+            if "others" not in unique_categories:
+                unique_categories.append("others")
+
             return {"categories": unique_categories}
     except Exception as e:
         logging.error(f"Error fetching categories: {e}")
@@ -39,6 +48,7 @@ async def get_categories():
             status_code=500,
             content={"error": f"Failed to fetch categories: {str(e)}"}
         )
+
 
 @citations.post("/char-count")
 async def char_count(file: UploadFile = File(...),):
@@ -143,7 +153,8 @@ async def document_category(input_file: UploadFile = File(...)):
     
 @citations.post("/get-citation")
 async def citation_review_route(
-input_file: UploadFile = File(...)):
+input_file: UploadFile = File(...),
+collection_name: str = Form(...)):
     """
     Example route for handling citation review process.
     """
@@ -153,10 +164,11 @@ input_file: UploadFile = File(...)):
         temp_file.write(await input_file.read())
 
     try:
+        collection_name = collection_name if collection_name != "others" else "general"
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
             style="APA",  # or any other preferred style
-            collection_name="healthcare_management",
+            collection_name=collection_name,
             threshold=0.0,
             top_k=5
         )
