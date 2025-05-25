@@ -17,6 +17,7 @@ import logging
 import uuid
 import json
 from typing import List, Dict, Any
+import random
 
 # Load SpaCy model for sentence segmentation
 nlp = spacy.load("en_core_web_sm")
@@ -396,7 +397,6 @@ class InTextCitationProcessor:
             
             # Select paragraphs to process (either random or sequential)
             if random_sample and total_paragraphs > paragraphs_to_process:
-                import random
                 paragraph_indices = sorted(random.sample(range(total_paragraphs), paragraphs_to_process))
                 paragraphs_to_process_list = [doc.paragraphs[i] for i in paragraph_indices]
                 logging.info(f"Randomly selected {len(paragraph_indices)} paragraphs for processing")

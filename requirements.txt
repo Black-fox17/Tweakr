@@ -44,7 +44,7 @@ logfire>=3.0.0
 
 # NLP and Text Processing
 spacy>=3.0.0
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+#https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
 # Additional dependencies with looser version constraints
 aiohttp>=3.8.0

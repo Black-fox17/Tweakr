@@ -30,13 +30,13 @@ async def get_categories():
         with get_session_with_ctx_manager() as session:
             categories = session.query(Papers.category).distinct().order_by(Papers.category).all()
             # Standardize categories and remove duplicates
-            standardized_categories = [category[0].lower().replace(" ", "_") for category in categories if category[0]]
+            standardized_categories = [category[0].lower().replace(" ", "_").strip("_") for category in categories if category[0]]
             unique_categories = sorted(list(set(standardized_categories)))
 
             # Ensure "healthcare_management" is unified
-            if "healthcare_management" in unique_categories:
-                unique_categories = [cat if cat != "healthcare_management" else "healthcare_management" for cat in unique_categories]
-
+            unwanted_categories = {"research_topic_2", "research_topic_3", "healthcare","governance"}
+            unique_categories = ["healthcare_management" if cat.startswith("healthcare_management") else cat for cat in unique_categories]
+            unique_categories = [cat for cat in unique_categories if cat not in unwanted_categories]
             # Add "others" category
             if "others" not in unique_categories:
                 unique_categories.append("others")
@@ -66,80 +66,6 @@ async def char_count(file: UploadFile = File(...),):
         return {"error": str(e)}
 
 
-# @citations.post("/process-paper/")
-# async def process_paper(
-#     file: UploadFile = File(...),
-#     style: str = Form(...),
-#     category: str = Form(...),
-#     use_all_citations: bool = Form(True)  # Default to using all citations
-# ):
-    """
-    Route to process an academic paper, generate references and in-text citations
-    based on the provided citation style and category. If no matches are found in the initial category,
-    it will try to find matches in other categories by generating a query from the document content.
-    
-    Parameters:
-    - file: The document to process
-    - style: Citation style (APA, MLA, Chicago)
-    - category: The category to search for papers in
-    - use_all_citations: If True, use all relevant citations; if False, use only the best citation
-    """
-    # Create a temporary file to store the uploaded document
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-        temp_file_path = temp_file.name
-        # Save the uploaded file to the temporary file
-        temp_file.write(await file.read())
-
-    try:
-        # Initialize PaperKeywordMatcher
-        matcher = PaperKeywordMatcher()
-
-        # Get matching titles using the retry mechanism
-        matching_titles, category_used = matcher.find_matching_papers_with_retry(temp_file_path, category)
-        
-        if matching_titles:
-            # Generate references
-            reference_generator = ReferenceGenerator(style=style)
-            references = reference_generator.generate_references(matching_titles, category_used)
-
-            print(references)
-
-            # Process in-text citations and save the modified document
-            intext_citation_processor = InTextCitationProcessor(style=style, collection_name=category_used)
-            output_file_path = temp_file_path.replace(".docx", "_with_citations.docx")
-            modified_file_path = intext_citation_processor.process_sentences(
-                temp_file_path, 
-                output_file_path,
-                use_all_citations=use_all_citations
-            )
-
-            # Return the modified document as a response
-            return FileResponse(
-                modified_file_path,
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                filename="modified_paper.docx"
-            )
-        else:
-            return JSONResponse(
-                content={"message": "No matching papers found after trying all available categories."},
-                status_code=404
-            )
-
-    except Exception as e:
-        logging.error(f"Error processing paper: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500
-        )
-
-    finally:
-        # Ensure the file is not in use before deletion
-        try:
-            Path(temp_file_path).unlink(missing_ok=True)
-        except PermissionError:
-            import time
-            time.sleep(1)  # Small delay before retrying
-            Path(temp_file_path).unlink(missing_ok=True)
 
 @citations.post("/get-category")
 async def document_category(input_file: UploadFile = File(...)):
@@ -164,7 +90,7 @@ collection_name: str = Form(...)):
         temp_file.write(await input_file.read())
 
     try:
-        collection_name = collection_name if collection_name != "others" else "general"
+        collection_name = collection_name if collection_name != "others" else "healthcare_management"
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
             style="APA",  # or any other preferred style
