@@ -447,6 +447,10 @@ class InTextCitationProcessor:
                     logging.error(f"Error tokenizing paragraph {para_idx}: {tokenize_error}")
                     continue
 
+                # Randomly sample sentences for processing
+                if random_sample:
+                    sentences = random.sample(sentences, len(sentences) // 2)
+
                 for sent_idx, sent in enumerate(sentences, start=1):
                     sentence_text = sent.text.strip()
 
@@ -481,7 +485,7 @@ class InTextCitationProcessor:
                             db_metadata = self.fetch_metadata_from_db(title)
                             authors = db_metadata.get("authors", ["Unknown"])
                             year = db_metadata.get("published_date", "n.d.")
- 
+
                             # Prepare citation details with page number
                             citation_id = str(uuid.uuid4())
                             citation_entry = {
