@@ -79,10 +79,10 @@ async def document_category(input_file: UploadFile = File(...)):
     
 @citations.post("/get-citation")
 async def citation_review_route(
-input_file: UploadFile = File(...),
-collection_name: str = Form(...)):
+    input_file: UploadFile = File(...),
+    collection_name: str = Form(...)):
     """
-    Example route for handling citation review process.
+    Route for handling citation review process with collection fallback.
     """
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
         temp_file_path = temp_file.name
@@ -90,7 +90,9 @@ collection_name: str = Form(...)):
         temp_file.write(await input_file.read())
 
     try:
+        # Handle the "others" case by defaulting to healthcare_management
         collection_name = collection_name if collection_name != "others" else "healthcare_management"
+        
         # Initialize the citation processor
         citation_processor = InTextCitationProcessor(
             style="APA",  # or any other preferred style
@@ -102,105 +104,41 @@ collection_name: str = Form(...)):
         # Prepare citations for review
         citation_review_data = citation_processor.prepare_citations_for_review(temp_file_path)
 
-        # Return JSON response
-        return {
+        # Add additional diagnostic information about the collection fallback
+        response_data = {
             "status": "success",
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
             "citations": citation_review_data["citations"],
+            "diagnostics": {
+                "primary_collection": collection_name,
+                "collections_used": citation_review_data["diagnostics"]["collections_used"],
+                "processed_paragraphs": citation_review_data["diagnostics"]["processed_paragraphs"],
+                "processed_sentences": citation_review_data["diagnostics"]["processed_sentences"]
+            }
         }
+
+        # Log information about collection usage
+        if citation_review_data["diagnostics"]["collections_used"]:
+            logging.info(f"Citations found using collections: {citation_review_data['diagnostics']['collections_used']}")
+        else:
+            logging.warning("No citations found in any collection")
+
+        return response_data
 
     except Exception as e:
         logging.error(f"Error in citation review route: {e}")
         return JSONResponse({
             "status": "error",
             "message": str(e)
-        }), 500
+        }, status_code=500)
 
-from pydantic import BaseModel, HttpUrl
-
-class PaperDetails(BaseModel):
-    title: str
-    authors: List[str]
-    year: str
-    url: HttpUrl
-    doi: str
-
-
-class Metadata(BaseModel):
-    paragraph_index: int
-    sentence_index: int
-
-
-class ReviewedCitation(BaseModel):
-    id: str
-    original_sentence: str
-    paper_details: PaperDetails
-    status: str
-    page_number: str
-    metadata: Metadata
-
-
-class UpdateCitation(BaseModel):
-    style: str
-    reviewed_citations: List[ReviewedCitation]
-@citations.post("/update-citations")
-async def update_citations_route(
-    updateData: UpdateCitation
-):
-    """
-    Route for processing reviewed citations and returning formatted references.
-    
-    Parameters:
-    - reviewed_citations (str): JSON string containing the reviewed citations
-    
-    Returns:
-    - JSONResponse: List of formatted references
-    """
-    try:
-        # Parse the reviewed citations JSON
-        citations_data = [citation.model_dump() for citation in updateData.reviewed_citations]
-        
-        # Initialize the citation processor
-        citation_processor = InTextCitationProcessor(
-            style=updateData.style,  # This could be a parameter if needed
-            collection_name="corporate_governance",
-            threshold=0.5,
-            top_k=3
-        )
-
-        # Get formatted references
-        formatted_references = citation_processor.update_document_with_reviewed_citations(
-            reviewed_citations=citations_data
-        )
-
-        # Return the formatted references
-        return JSONResponse(
-            content={
-                "status": "success",
-                "references": formatted_references
-            },
-            status_code=200
-        )
-
-    except json.JSONDecodeError as e:
-        logging.error(f"Invalid JSON format for reviewed citations: {e}")
-        return JSONResponse(
-            content={
-                "status": "error",
-                "message": "Invalid JSON format for reviewed citations"
-            },
-            status_code=400
-        )
-    except Exception as e:
-        logging.error(f"Error in update citations route: {e}")
-        return JSONResponse(
-            content={
-                "status": "error",
-                "message": str(e)
-            },
-            status_code=500
-        )
+    finally:
+        # Clean up the temporary file
+        try:
+            os.unlink(temp_file_path)
+        except Exception as cleanup_error:
+            logging.warning(f"Could not clean up temporary file: {cleanup_error}")
 
 @citations.post("/extract-content")
 async def extract_paper_content(file: UploadFile = File(...)):

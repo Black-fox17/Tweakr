@@ -49,6 +49,24 @@ class InTextCitationProcessor:
         self.headers = headers  # Predefined headings (if any)
         self.matched_paper_titles = []  # Store matched paper titles
 
+        # Define all available collections for fallback
+        self.available_collections = [
+                "healthcare_management",
+                "adult_care",
+                "biology",
+                "business_management",
+                "cancer",
+                "computer_science", 
+                "corporate_governance",
+                "machine_learning",
+                "marketing",
+                "mathematics",
+                "neuroscience",
+                "physics",
+                "quantum_physics",
+                "others"
+            ]
+
         # Load SpaCy model for sentence segmentation
         # This might become unused if paragraph-level processing is sufficient.
         # Consider removing if no longer needed after refactoring.
@@ -203,6 +221,97 @@ class InTextCitationProcessor:
         
         else:
             raise ValueError(f"Unsupported citation style: {self.style}")
+
+    def find_relevant_papers_with_fallback(self, sentence: str, return_all: bool = False):
+        """
+        Retrieve semantically relevant papers for a sentence using similarity search with collection fallback.
+        If no papers are found in the primary collection, tries healthcare_management first, then all other collections.
+        
+        Parameters:
+        - sentence (str): The sentence to find relevant papers for
+        - return_all (bool): If True, returns all papers above threshold; 
+                            If False, returns only the best matching paper
+        
+        Returns:
+        - Tuple of (List of document objects representing relevant papers, collection_name used)
+        """
+        if not isinstance(sentence, str) or not sentence.strip():
+            logging.warning(f"Skipping empty or invalid sentence: '{sentence}'")
+            return [], None
+
+        # First, try the primary collection
+        results = self._search_in_collection(sentence, self.collection_name)
+        if results:
+            logging.info(f"Found {len(results)} results in primary collection '{self.collection_name}'")
+            return self._filter_and_return_results(results, return_all), self.collection_name
+
+        # If no results in primary collection, try healthcare_management first (if it's not already the primary)
+        if self.collection_name != "healthcare_management":
+            logging.info(f"No results in primary collection '{self.collection_name}', trying 'healthcare_management'")
+            results = self._search_in_collection(sentence, "healthcare_management")
+            if results:
+                logging.info(f"Found {len(results)} results in 'healthcare_management' collection")
+                return self._filter_and_return_results(results, return_all), "healthcare_management"
+
+        # If still no results, try all other available collections
+        collections_to_try = [col for col in self.available_collections 
+                             if col not in [self.collection_name, "healthcare_management"]]
+        
+        for collection in collections_to_try:
+            logging.info(f"Trying collection '{collection}' for sentence: '{sentence[:50]}...'")
+            results = self._search_in_collection(sentence, collection)
+            if results:
+                logging.info(f"Found {len(results)} results in collection '{collection}'")
+                return self._filter_and_return_results(results, return_all), collection
+
+        logging.warning(f"No results found in any collection for sentence: '{sentence[:50]}...'")
+        return [], None
+
+    def _search_in_collection(self, sentence: str, collection_name: str):
+        """
+        Helper method to search in a specific collection.
+        
+        Returns:
+        - List of documents or empty list if error/no results
+        """
+        try:
+            results = self.mongo_manager.semantic_search(
+                collection_name=collection_name,
+                query_text=sentence,
+                top_k=self.top_k
+            )
+            logging.debug(f"Collection '{collection_name}' returned {len(results)} documents for sentence")
+            return results
+        except Exception as e:
+            logging.error(f"Error searching in collection '{collection_name}': {e}")
+            return []
+
+    def _filter_and_return_results(self, results, return_all: bool):
+        """
+        Helper method to filter results by threshold and return appropriate subset.
+        """
+        filtered_results = []
+        best_document = []
+        highest_score = float('-inf')
+
+        for doc in results:
+            metadata = doc.metadata
+            score = metadata.get("score", 0.0)
+
+            if score >= self.threshold:
+                filtered_results.append(doc)
+                if score > highest_score:
+                    highest_score = score
+                    best_document.clear()
+                    best_document.append(doc)
+            else:
+                logging.debug(
+                    f"Document '{doc.metadata.get('title', 'Unknown')}' "
+                    f"filtered out with score {score:.2f} < threshold {self.threshold:.2f}"
+                )
+
+        return filtered_results if return_all else best_document
+
     def find_relevant_papers(self, sentence: str, return_all: bool = False):
         """
         Retrieve semantically relevant papers for a sentence using similarity search,
@@ -216,50 +325,8 @@ class InTextCitationProcessor:
         Returns:
         - List of document objects representing relevant papers
         """
-        if not isinstance(sentence, str) or not sentence.strip():
-            logging.warning(f"Skipping empty or invalid sentence: '{sentence}'")
-            return []
-
-        try:
-            results = self.mongo_manager.semantic_search(
-                collection_name=self.collection_name,
-                query_text=sentence,
-                top_k=self.top_k
-            )
-            logging.debug(f"Raw similarity search returned {len(results)} documents for sentence: '{sentence}'")
-
-            # Filter by threshold
-            filtered_results = []
-            best_document = []
-            highest_score = float('-inf')
-
-            for doc in results:
-                metadata = doc.metadata
-                score = metadata.get("score", 0.0)
-
-                if score >= self.threshold:
-                    filtered_results.append(doc)
-                    if score > highest_score:
-                        highest_score = score
-                        best_document.clear()  # Ensure only one document is in the list
-                        best_document.append(doc)
-                else:
-                    logging.debug(
-                        f"Document '{doc.metadata.get('title', 'Unknown')}' "
-                        f"filtered out with score {score:.2f} < threshold {self.threshold:.2f}"
-                    )
-
-            if not filtered_results:
-                logging.info(
-                    f"No documents found above threshold={self.threshold} for sentence: '{sentence}'"
-                )
-            
-            # Return all filtered results or just the best one
-            return filtered_results if return_all else best_document
-
-        except Exception as e:
-            logging.error(f"Error during similarity search for sentence '{sentence}': {e}")
-            return []
+        results, _ = self.find_relevant_papers_with_fallback(sentence, return_all)
+        return results
 
     def process_sentences(self, input_path: str, output_path: str, use_all_citations: bool = False):
         """
@@ -415,7 +482,8 @@ class InTextCitationProcessor:
                     "processed_sentences": 0,
                     "skipped_paragraphs": [],
                     "empty_sentences": [],
-                    "selected_paragraph_indices": paragraph_indices
+                    "selected_paragraph_indices": paragraph_indices,
+                    "collections_used": {}  # Track which collections were used
                 }
             }
 
@@ -466,8 +534,14 @@ class InTextCitationProcessor:
                     citation_review_data["diagnostics"]["processed_sentences"] += 1
 
                     try:
-                        # Find relevant papers for the sentence
-                        relevant_papers = self.find_relevant_papers(sentence_text)
+                        # Find relevant papers for the sentence with fallback mechanism
+                        relevant_papers, collection_used = self.find_relevant_papers_with_fallback(sentence_text)
+                        
+                        # Track which collection was used
+                        if collection_used:
+                            if collection_used not in citation_review_data["diagnostics"]["collections_used"]:
+                                citation_review_data["diagnostics"]["collections_used"][collection_used] = 0
+                            citation_review_data["diagnostics"]["collections_used"][collection_used] += 1
                         
                         if not relevant_papers:
                             continue
@@ -499,7 +573,8 @@ class InTextCitationProcessor:
                                     "doi": metadata.get("doi", "")
                                 },
                                 "status": "pending_review",
-                                "page_number": f"{current_page}({sent_idx})" ,
+                                "page_number": f"{current_page}({sent_idx})",
+                                "collection_used": collection_used,  # Track which collection found this citation
                                 "metadata": {
                                     "paragraph_index": actual_para_idx,
                                     "sentence_index": sent_idx,
@@ -515,10 +590,19 @@ class InTextCitationProcessor:
 
                 # Increment page number after each paragraph
                 current_page += 1
-
+            
+            # Check if no citations were found and log diagnostic information
+            if len(citation_review_data["citations"]) == 0:
+                logging.warning("No citations found in any collection. This might indicate:")
+                logging.warning("1. Content doesn't match any papers in the vector databases")
+                logging.warning("2. Similarity threshold is too high")
+                logging.warning("3. Collections might be empty or inaccessible")
+                logging.warning(f"Collections attempted: {self.available_collections}")
+            
             # Log final diagnostic information
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
             logging.info(f"Processed {citation_review_data['diagnostics']['processed_paragraphs']} paragraphs")
+            logging.info(f"Collections used: {citation_review_data['diagnostics']['collections_used']}")
             if random_sample:
                 logging.info(f"Paragraph sampling method: Random sampling from {total_paragraphs} paragraphs")
             else:
@@ -530,6 +614,7 @@ class InTextCitationProcessor:
         except Exception as e:
             logging.error(f"Error processing document: {e}")
             raise
+
     def update_document_with_reviewed_citations(self, reviewed_citations: List[Dict[str, Any]]) -> List[str]:
         """
         Process reviewed citations and return formatted references.
@@ -614,3 +699,6 @@ class InTextCitationProcessor:
                 formatted_references.append(reference)
 
         return formatted_references
+
+
+# Updated API route
