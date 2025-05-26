@@ -18,6 +18,7 @@ import logging
 import uuid
 import json
 from typing import List, Dict, Any
+import os
 
 citations = APIRouter(prefix="/citations", tags=["Citations"])
 
