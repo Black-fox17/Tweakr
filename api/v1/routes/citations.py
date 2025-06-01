@@ -7,7 +7,7 @@ import tempfile
 from docx import Document
 
 from app.core.references_generator import ReferenceGenerator
-from app.core.intext_citation import InTextCitationProcessor
+from app.core.intext_citation import AcademicCitationProcessor
 from app.core.paper_matcher import PaperKeywordMatcher
 from app.auth.helpers import get_current_active_user
 from app.core.wordcount import count_words_in_docx
@@ -95,9 +95,8 @@ async def citation_review_route(
         collection_name = collection_name if collection_name != "others" else "healthcare_management"
         
         # Initialize the citation processor
-        citation_processor = InTextCitationProcessor(
-            style="APA",  # or any other preferred style
-            collection_name=collection_name,
+        citation_processor = AcademicCitationProcessor(
+            style="APA",
             threshold=0.0,
             top_k=5
         )
@@ -105,25 +104,12 @@ async def citation_review_route(
         # Prepare citations for review
         citation_review_data = citation_processor.prepare_citations_for_review(temp_file_path)
 
-        # Add additional diagnostic information about the collection fallback
         response_data = {
             "status": "success",
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
             "citations": citation_review_data["citations"],
-            "diagnostics": {
-                "primary_collection": collection_name,
-                "collections_used": citation_review_data["diagnostics"]["collections_used"],
-                "processed_paragraphs": citation_review_data["diagnostics"]["processed_paragraphs"],
-                "processed_sentences": citation_review_data["diagnostics"]["processed_sentences"]
-            }
         }
-
-        # Log information about collection usage
-        if citation_review_data["diagnostics"]["collections_used"]:
-            logging.info(f"Citations found using collections: {citation_review_data['diagnostics']['collections_used']}")
-        else:
-            logging.warning("No citations found in any collection")
 
         return response_data
 
