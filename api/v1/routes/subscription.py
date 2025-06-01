@@ -23,10 +23,18 @@ subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
 FLW_SECRET_KEY = config("FLW_SECRET_KEY")
 
 @subscription.get("/verify-payment-sync/{transaction_id}")
-async def verify_payment_sync(transaction_id: int):
+async def verify_payment_sync(transaction_id: str):  # Changed from int to str
     """
     Synchronous endpoint to verify payment using requests library.
     """
+    
+    # Add validation
+    if not transaction_id:
+        raise HTTPException(status_code=400, detail="Transaction ID is required")
+    
+    if not FLW_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Flutterwave secret key not configured")
+    
     url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
     headers = {
         "accept": "application/json",
@@ -34,21 +42,43 @@ async def verify_payment_sync(transaction_id: int):
         "Content-Type": "application/json"
     }
 
-    response = requests.get(url, headers=headers)
+    try:
+        # Add timeout to prevent hanging
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        # Log the response for debugging
+        print(f"Flutterwave response status: {response.status_code}")
+        print(f"Flutterwave response: {response.text}")
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to reach Flutterwave. Status: {response.status_code}, Response: {response.text}"
+            )
 
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to reach Flutterwave")
+        result = response.json()
 
-    result = response.json()
-
-    if result["status"] == "success" and result["data"]["status"] == "successful":
-        return {
-            "status": "success",
-            "message": "Payment verified successfully",
-            "data": result["data"]
-        }
-    else:
-        raise HTTPException(status_code=400, detail="Payment not successful")
+        if result["status"] == "success" and result["data"]["status"] == "successful":
+            return {
+                "status": "success",
+                "message": "Payment verified successfully",
+                "data": result["data"]
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": "Payment verification failed",
+                "data": result
+            }
+            
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=500, detail="Request to Flutterwave timed out")
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=500, detail="Could not connect to Flutterwave")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Request error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @subscription.post("/subscriptions", response_model=CreateSubscriptionResponse)
 async def create_new_subscription(
