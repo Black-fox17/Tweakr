@@ -21,7 +21,7 @@ class AcademicCitationProcessor:
     Provides fallback mechanisms and improved error handling.
     """
     
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=100):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=500):
         """
         Initialize the academic citation processor.
 
