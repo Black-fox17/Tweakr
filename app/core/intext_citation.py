@@ -18,10 +18,10 @@ logging.basicConfig(level=logging.INFO)
 class AcademicCitationProcessor:
     """
     Enhanced replacement for MongoDB-based citation processor using multiple academic search APIs.
-    Provides fallback mechanisms and improved error handling.
+    Provides fallback mechanisms and improved error handling with proper termination controls.
     """
     
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=500):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=300):
         """
         Initialize the academic citation processor.
 
@@ -47,10 +47,10 @@ class AcademicCitationProcessor:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
         
-        # Initialize session with retry strategy
+        # Initialize session with retry strategy that counts towards API limits
         self.session = requests.Session()
         retry_strategy = Retry(
-            total=3,
+            total=2,  # Reduced retries to save API calls
             status_forcelist=[429, 500, 502, 503, 504],
             backoff_factor=1
         )
@@ -136,6 +136,7 @@ class AcademicCitationProcessor:
     def search_all_providers(self, query: str, max_results: int = None) -> List[Dict]:
         """
         Search for academic papers using all available providers with fallback.
+        Terminates early if API limits are reached.
         
         Parameters:
         - query (str): Search query text
@@ -145,7 +146,7 @@ class AcademicCitationProcessor:
         - List[Dict]: Combined list of paper metadata from all providers
         """
         if self.api_call_count >= self.max_api_calls:
-            logging.warning(f"Maximum API calls ({self.max_api_calls}) exceeded")
+            logging.warning(f"Maximum API calls ({self.max_api_calls}) exceeded - terminating search")
             return []
         
         query = self.clean_query(query)
@@ -158,10 +159,11 @@ class AcademicCitationProcessor:
         
         for provider in self.search_providers:
             if self.api_call_count >= self.max_api_calls:
+                logging.warning(f"API limit reached during provider {provider} - stopping search")
                 break
                 
             try:
-                logging.info(f"Searching {provider} for: '{query[:50]}...'")
+                logging.info(f"Searching {provider} for: '{query[:50]}...' (API calls: {self.api_call_count}/{self.max_api_calls})")
                 papers = self._search_provider(provider, query, max_results)
                 
                 # Deduplicate by title
@@ -181,23 +183,36 @@ class AcademicCitationProcessor:
                     
             except Exception as e:
                 logging.error(f"Error searching {provider}: {e}")
+                # Count failed requests towards API limit to prevent infinite retries
+                self.api_call_count += 1
                 continue
         
         return all_papers
 
     def _search_provider(self, provider: str, query: str, max_results: int) -> List[Dict]:
-        """Search a specific provider"""
+        """Search a specific provider with proper API call counting including retries"""
+        if self.api_call_count >= self.max_api_calls:
+            logging.warning(f"API limit reached before {provider} search")
+            return []
+            
         self._respect_rate_limit(provider)
+        
+        # Count the API call before making it
         self.api_call_count += 1
         
-        if provider == 'semantic_scholar':
-            return self._search_semantic_scholar(query, max_results)
-        elif provider == 'crossref':
-            return self._search_crossref(query, max_results)
-        elif provider == 'openalex':
-            return self._search_openalex(query, max_results)
-        else:
-            logging.error(f"Unsupported search provider: {provider}")
+        try:
+            if provider == 'semantic_scholar':
+                return self._search_semantic_scholar(query, max_results)
+            elif provider == 'crossref':
+                return self._search_crossref(query, max_results)
+            elif provider == 'openalex':
+                return self._search_openalex(query, max_results)
+            else:
+                logging.error(f"Unsupported search provider: {provider}")
+                return []
+        except Exception as e:
+            # Retries are handled by the requests session, but we already counted the call
+            logging.error(f"Failed to search {provider}: {e}")
             return []
 
     def _search_semantic_scholar(self, query: str, max_results: int) -> List[Dict]:
@@ -497,6 +512,11 @@ class AcademicCitationProcessor:
             logging.warning(f"Skipping empty or invalid sentence: '{sentence}'")
             return []
 
+        # Check API limit before searching
+        if self.api_call_count >= self.max_api_calls:
+            logging.warning("API limit reached - no more searches allowed")
+            return []
+
         # Search for papers across all providers
         papers = self.search_all_providers(sentence)
         if not papers:
@@ -547,8 +567,8 @@ class AcademicCitationProcessor:
         if not authors:
             authors = ["Unknown"]
         
-        # Handle year safely
-        if not year or year == 'None':
+        # Handle year safely - convert None/empty to "n.d."
+        if not year or year == 'None' or year is None:
             year = "n.d."
         else:
             year = str(year)
@@ -585,7 +605,7 @@ class AcademicCitationProcessor:
                                    random_sample: bool = True) -> Dict[str, Any]:
         """
         Prepare in-text citations for frontend review using multiple academic search APIs.
-        Enhanced version with better error handling and fallback mechanisms.
+        Enhanced version with better error handling, proper termination, and improved page numbering.
 
         Parameters:
         - input_path (str): Path to the input document.
@@ -630,12 +650,23 @@ class AcademicCitationProcessor:
                     "selected_paragraph_indices": paragraph_indices,
                     "search_providers_used": self.search_providers,
                     "api_calls_made": 0,
-                    "errors": []
+                    "errors": [],
+                    "terminated_early": False,
+                    "termination_reason": None
                 }
             }
 
             current_page = 1
+            total_sentences_processed = 0
+            
             for para_idx, para in enumerate(paragraphs_to_process_list):
+                # Check termination conditions at paragraph level
+                if self.api_call_count >= self.max_api_calls:
+                    citation_review_data["diagnostics"]["terminated_early"] = True
+                    citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
+                    logging.warning(f"Terminating early: API call limit ({self.max_api_calls}) reached")
+                    break
+                
                 actual_para_idx = paragraph_indices[para_idx] + 1 if random_sample else para_idx + 1
                 paragraph_text = para.text.strip()
 
@@ -659,8 +690,11 @@ class AcademicCitationProcessor:
                     sentences = random.sample(sentences, max(2, len(sentences) // 2))
 
                 for sent_idx, sent in enumerate(sentences, start=1):
+                    # Check termination conditions at sentence level
                     if self.api_call_count >= self.max_api_calls:
-                        logging.warning("Maximum API calls reached, stopping processing")
+                        citation_review_data["diagnostics"]["terminated_early"] = True
+                        citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
+                        logging.warning("Terminating early: API call limit reached during sentence processing")
                         break
                         
                     sentence_text = sent.text.strip()
@@ -673,6 +707,7 @@ class AcademicCitationProcessor:
                         continue
 
                     citation_review_data["diagnostics"]["processed_sentences"] += 1
+                    total_sentences_processed += 1
 
                     try:
                         # Find relevant papers using academic search
@@ -695,9 +730,18 @@ class AcademicCitationProcessor:
                             if not valid_authors:
                                 continue
 
-                            year = str(paper.get('year', 'n.d.'))
+                            # Handle year properly - convert None to "n.d."
+                            year = paper.get('year')
+                            if year is None or year == 'None':
+                                year = "n.d."
+                            else:
+                                year = str(year)
 
                             citation_id = str(uuid.uuid4())
+                            
+                            # Improved page numbering format
+                            page_number = f"P{current_page}.S{sent_idx}"
+                            
                             citation_entry = {
                                 "id": citation_id,
                                 "original_sentence": sentence_text,
@@ -713,12 +757,12 @@ class AcademicCitationProcessor:
                                     "source": paper.get('source', 'Unknown')
                                 },
                                 "status": "pending_review",
-                                "page_number": f"{current_page}({sent_idx})",
+                                "page_number": page_number,
                                 "search_providers": self.search_providers,
                                 "metadata": {
                                     "paragraph_index": actual_para_idx,
                                     "sentence_index": sent_idx,
-                                    "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
+                                     "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
                                 }
                             }
 
