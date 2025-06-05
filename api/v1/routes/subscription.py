@@ -27,14 +27,7 @@ async def verify_payment_sync(transaction_id: str):  # Changed from int to str
     """
     Synchronous endpoint to verify payment using requests library.
     """
-    
-    # Add validation
-    if not transaction_id:
-        raise HTTPException(status_code=400, detail="Transaction ID is required")
-    
-    if not FLW_SECRET_KEY:
-        raise HTTPException(status_code=500, detail="Flutterwave secret key not configured")
-    
+
     url = f"https://api.flutterwave.com/v3/transactions/{transaction_id}/verify"
     headers = {
         "accept": "application/json",
@@ -46,15 +39,6 @@ async def verify_payment_sync(transaction_id: str):  # Changed from int to str
         # Add timeout to prevent hanging
         response = requests.get(url, headers=headers, timeout=30)
         
-        # Log the response for debugging
-        print(f"Flutterwave response status: {response.status_code}")
-        print(f"Flutterwave response: {response.text}")
-        
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to reach Flutterwave. Status: {response.status_code}, Response: {response.text}"
-            )
 
         result = response.json()
 
