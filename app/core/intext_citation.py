@@ -21,7 +21,7 @@ class AcademicCitationProcessor:
     Provides fallback mechanisms and improved error handling with proper termination controls.
     """
     
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=300):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=100):
         """
         Initialize the academic citation processor.
 
@@ -740,37 +740,38 @@ class AcademicCitationProcessor:
                             citation_id = str(uuid.uuid4())
                             
                             # Improved page numbering format
-                            page_number = f"P{current_page}.S{sent_idx}"
+                            page_number = f"P{current_page}"
                             
-                            citation_entry = {
-                                "id": citation_id,
-                                "original_sentence": sentence_text,
-                                "paper_details": {
-                                    "title": title,
-                                    "authors": valid_authors,
-                                    "year": year,
-                                    "url": paper.get('url', ''),
-                                    "doi": paper.get('doi', ''),
-                                    "venue": paper.get('venue', ''),
-                                    "citations": paper.get('citations', 0),
-                                    "relevance_score": round(paper.get('relevance_score', 0), 3),
-                                    "source": paper.get('source', 'Unknown')
-                                },
-                                "status": "pending_review",
-                                "page_number": page_number,
-                                "search_providers": self.search_providers,
-                                "metadata": {
-                                    "paragraph_index": actual_para_idx,
-                                    "sentence_index": sent_idx,
-                                     "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
+                            if int(year) >= 2015 and year != "n.d.":
+                                citation_entry = {
+                                    "id": citation_id,
+                                    "original_sentence": sentence_text,
+                                    "paper_details": {
+                                        "title": title,
+                                        "authors": valid_authors,
+                                        "year": year,
+                                        "url": paper.get('url', ''),
+                                        "doi": paper.get('doi', ''),
+                                        "venue": paper.get('venue', ''),
+                                        "citations": paper.get('citations', 0),
+                                        "relevance_score": round(paper.get('relevance_score', 0), 3),
+                                        "source": paper.get('source', 'Unknown')
+                                    },
+                                    "status": "pending_review",
+                                    "page_number": page_number,
+                                    "search_providers": self.search_providers,
+                                    "metadata": {
+                                        "paragraph_index": actual_para_idx,
+                                        "sentence_index": sent_idx,
+                                        "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
+                                    }
                                 }
-                            }
 
-                            citation_review_data["citations"].append(citation_entry)
-                            citation_review_data["total_citations"] += 1
-                            
-                            # Since we only want one citation per sentence, break after first valid citation
-                            break
+                                citation_review_data["citations"].append(citation_entry)
+                                citation_review_data["total_citations"] += 1
+                                
+                                # Since we only want one citation per sentence, break after first valid citation
+                                break
 
                     except Exception as e:
                         error_msg = f"Error processing sentence '{sentence_text[:50]}...': {e}"
@@ -794,21 +795,3 @@ class AcademicCitationProcessor:
         except Exception as e:
             logging.error(f"Error processing document: {e}")
             raise
-
-# Usage example
-if __name__ == "__main__":
-    # Enhanced usage example with multiple providers
-    processor = AcademicCitationProcessor(
-        style="APA",
-        search_providers=["semantic_scholar", "crossref", "openalex"],  # Multiple providers with fallback
-        threshold=0.1,  # Slightly higher threshold for better quality
-        top_k=3,  # Fewer papers per provider for efficiency
-        max_api_calls=150  # Reasonable API call limit
-    )
-    
-    # This would replace your original prepare_citations_for_review call
-    # citation_data = processor.prepare_citations_for_review(
-    #     input_path="path/to/document.docx",
-    #     max_paragraphs=50,
-    #     random_sample=True
-    # ) 
