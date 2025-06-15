@@ -698,7 +698,6 @@ class AcademicCitationProcessor:
                 }
             }
 
-            current_page = 1
             processed_sentences = 0
             
             for sentence_data in all_sentences:
@@ -741,7 +740,6 @@ class AcademicCitationProcessor:
                             year = str(year)
 
                         citation_id = str(uuid.uuid4())
-                        page_number = f"P{current_page}"
                         
                         if int(year) >= 2015 and year != "n.d.":
                             citation_entry = {
@@ -759,7 +757,7 @@ class AcademicCitationProcessor:
                                     "source": paper.get('source', 'Unknown')
                                 },
                                 "status": "pending_review",
-                                "page_number": page_number,
+                                "page_number": actual_para_idx,
                                 "search_providers": self.search_providers,
                                 "metadata": {
                                     "paragraph_index": actual_para_idx,
@@ -777,9 +775,6 @@ class AcademicCitationProcessor:
                     error_msg = f"Error processing sentence '{sentence_text[:50]}...': {e}"
                     logging.error(error_msg)
                     citation_review_data["diagnostics"]["errors"].append(error_msg)
-
-                if processed_sentences % 20 == 0:
-                    current_page += 1
             
             citation_review_data["diagnostics"]["api_calls_made"] = self.api_call_count
             citation_review_data["diagnostics"]["processed_paragraphs"] = len(set(s['para_idx'] for s in all_sentences[:processed_sentences]))
