@@ -76,11 +76,11 @@ class AcademicCitationProcessor:
         if self.max_api_calls is not None:
             return self.max_api_calls, 0
         
-        citation_rate = 0.15
-        avg_providers_per_search = len(self.search_providers) * 0.8
+        citation_rate = 0.5
+        avg_providers_per_search = len(self.search_providers) 
         estimated_citations = int(total_sentences * citation_rate)
-        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 500)
-        calculated_max_calls = max(calculated_max_calls, 50)
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 100)
+        calculated_max_calls = max(calculated_max_calls, 200)
         
         avg_time_per_call = sum(self.rate_limits.values()) / len(self.rate_limits) + 0.5
         estimated_eta_seconds = calculated_max_calls * avg_time_per_call
