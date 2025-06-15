@@ -21,7 +21,7 @@ class AcademicCitationProcessor:
     Provides fallback mechanisms and improved error handling with proper termination controls.
     """
     
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=100):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None):
         """
         Initialize the academic citation processor.
 
@@ -30,7 +30,7 @@ class AcademicCitationProcessor:
         - search_providers (list): List of academic search providers in priority order.
         - threshold (float): Minimum relevance threshold.
         - top_k (int): Number of top relevant documents to retrieve per provider.
-        - max_api_calls (int): Maximum number of API calls allowed.
+        - max_api_calls (int): Maximum number of API calls allowed (auto-calculated if None).
         """
         self.style = style
         self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
@@ -40,17 +40,15 @@ class AcademicCitationProcessor:
         self.api_call_count = 0
         self.matched_paper_titles = []
         
-        # Load SpaCy model for sentence segmentation
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
         
-        # Initialize session with retry strategy that counts towards API limits
         self.session = requests.Session()
         retry_strategy = Retry(
-            total=2,  # Reduced retries to save API calls
+            total=2,
             status_forcelist=[429, 500, 502, 503, 504],
             backoff_factor=1
         )
@@ -58,17 +56,14 @@ class AcademicCitationProcessor:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
         
-        # Rate limiting delays for each provider (seconds)
         self.rate_limits = {
             'semantic_scholar': 0.1,
             'crossref': 0.05,
             'openalex': 0.05
         }
         
-        # Track last API call time for each provider
         self.last_api_call = {}
         
-        # Academic domains for filtering relevance
         self.academic_domains = [
             'healthcare', 'medicine', 'biology', 'computer science', 'machine learning',
             'business', 'management', 'marketing', 'mathematics', 'physics', 
@@ -76,6 +71,24 @@ class AcademicCitationProcessor:
             'public health', 'clinical', 'research', 'evidence-based', 'systematic'
         ]
 
+    def _calculate_api_limits_and_eta(self, total_sentences: int) -> tuple:
+        """Calculate API limits and ETA based on sentence count"""
+        if self.max_api_calls is not None:
+            return self.max_api_calls, 0
+        
+        citation_rate = 0.15
+        avg_providers_per_search = len(self.search_providers) * 0.8
+        estimated_citations = int(total_sentences * citation_rate)
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 500)
+        calculated_max_calls = max(calculated_max_calls, 50)
+        
+        avg_time_per_call = sum(self.rate_limits.values()) / len(self.rate_limits) + 0.5
+        estimated_eta_seconds = calculated_max_calls * avg_time_per_call
+        
+        self.max_api_calls = int(calculated_max_calls)
+        
+        return self.max_api_calls, estimated_eta_seconds
+    
     def _respect_rate_limit(self, provider: str):
         """Ensure rate limiting is respected for each provider"""
         if provider in self.last_api_call:
@@ -602,18 +615,10 @@ class AcademicCitationProcessor:
             raise ValueError(f"Unsupported citation style: {self.style}")
 
     def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 100, 
-                                   random_sample: bool = True) -> Dict[str, Any]:
+                               random_sample: bool = True) -> Dict[str, Any]:
         """
         Prepare in-text citations for frontend review using multiple academic search APIs.
-        Enhanced version with better error handling, proper termination, and improved page numbering.
-
-        Parameters:
-        - input_path (str): Path to the input document.
-        - max_paragraphs (int): Maximum number of paragraphs to process (default: 100).
-        - random_sample (bool): Whether to randomly sample paragraphs (default: True).
-
-        Returns:
-        - Dict containing document-level and citation-level information for review.
+        Enhanced version with random sentence selection and dynamic API limits.
         """
         logging.info(f"Preparing citations for review using providers {self.search_providers} from file: '{input_path}'")
 
@@ -625,11 +630,9 @@ class AcademicCitationProcessor:
             total_paragraphs = len(doc.paragraphs)
             logging.info(f"Document paragraphs count: {total_paragraphs}")
             
-            # Calculate paragraphs to process
             paragraphs_to_process = min(total_paragraphs, max_paragraphs)
             logging.info(f"Will process {paragraphs_to_process} out of {total_paragraphs} paragraphs")
             
-            # Select paragraphs
             if random_sample and total_paragraphs > paragraphs_to_process:
                 paragraph_indices = sorted(random.sample(range(total_paragraphs), paragraphs_to_process))
                 paragraphs_to_process_list = [doc.paragraphs[i] for i in paragraph_indices]
@@ -637,7 +640,43 @@ class AcademicCitationProcessor:
                 paragraphs_to_process_list = doc.paragraphs[:paragraphs_to_process]
                 paragraph_indices = list(range(paragraphs_to_process))
             
-            # Initialize citation review data
+            all_sentences = []
+            for para_idx, para in enumerate(paragraphs_to_process_list):
+                actual_para_idx = paragraph_indices[para_idx] + 1 if random_sample else para_idx + 1
+                paragraph_text = para.text.strip()
+
+                if not paragraph_text or self.is_dynamic_heading(para):
+                    continue
+
+                try:
+                    sentences = list(self.nlp(paragraph_text).sents)
+                    for sent_idx, sent in enumerate(sentences, start=1):
+                        sentence_text = sent.text.strip()
+                        if sentence_text and len(sentence_text) >= 10:
+                            all_sentences.append({
+                                'text': sentence_text,
+                                'para_idx': para_idx,
+                                'actual_para_idx': actual_para_idx,
+                                'sent_idx': sent_idx,
+                                'original_doc_idx': paragraph_indices[para_idx] if random_sample else para_idx
+                            })
+                except Exception as tokenize_error:
+                    logging.error(f"Error tokenizing paragraph {para_idx}: {tokenize_error}")
+                    continue
+
+            total_sentences = len(all_sentences)
+            logging.info(f"Total sentences to process: {total_sentences}")
+            
+            calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
+            
+            logging.info(f"API call limit set to: {calculated_max_calls}")
+            if estimated_eta > 0:
+                eta_minutes = estimated_eta / 60
+                logging.info(f"Estimated processing time: {eta_minutes:.1f} minutes")
+
+            if random_sample and total_sentences > 0:
+                random.shuffle(all_sentences)
+
             citation_review_data = {
                 "document_id": str(uuid.uuid4()),
                 "total_citations": 0,
@@ -645,11 +684,14 @@ class AcademicCitationProcessor:
                 "diagnostics": {
                     "processed_paragraphs": 0,
                     "processed_sentences": 0,
+                    "total_sentences_found": total_sentences,
                     "skipped_paragraphs": [],
                     "empty_sentences": [],
                     "selected_paragraph_indices": paragraph_indices,
                     "search_providers_used": self.search_providers,
                     "api_calls_made": 0,
+                    "max_api_calls": calculated_max_calls,
+                    "estimated_eta_seconds": estimated_eta,
                     "errors": [],
                     "terminated_early": False,
                     "termination_reason": None
@@ -657,136 +699,94 @@ class AcademicCitationProcessor:
             }
 
             current_page = 1
-            total_sentences_processed = 0
+            processed_sentences = 0
             
-            for para_idx, para in enumerate(paragraphs_to_process_list):
-                # Check termination conditions at paragraph level
+            for sentence_data in all_sentences:
                 if self.api_call_count >= self.max_api_calls:
                     citation_review_data["diagnostics"]["terminated_early"] = True
                     citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
                     logging.warning(f"Terminating early: API call limit ({self.max_api_calls}) reached")
                     break
                 
-                actual_para_idx = paragraph_indices[para_idx] + 1 if random_sample else para_idx + 1
-                paragraph_text = para.text.strip()
+                sentence_text = sentence_data['text']
+                para_idx = sentence_data['para_idx']
+                actual_para_idx = sentence_data['actual_para_idx']
+                sent_idx = sentence_data['sent_idx']
+                original_doc_idx = sentence_data['original_doc_idx']
+                
+                processed_sentences += 1
+                citation_review_data["diagnostics"]["processed_sentences"] += 1
 
-                # Skip empty paragraphs and headings
-                if not paragraph_text or self.is_dynamic_heading(para):
-                    citation_review_data["diagnostics"]["skipped_paragraphs"].append(actual_para_idx)
-                    continue
-
-                citation_review_data["diagnostics"]["processed_paragraphs"] += 1
-
-                # Tokenize paragraph into sentences
                 try:
-                    sentences = list(self.nlp(paragraph_text).sents)
-                except Exception as tokenize_error:
-                    logging.error(f"Error tokenizing paragraph {para_idx}: {tokenize_error}")
-                    citation_review_data["diagnostics"]["errors"].append(f"Tokenization error in paragraph {para_idx}")
-                    continue
-
-                # Sample sentences if random sampling is enabled
-                if random_sample and len(sentences) > 3:
-                    sentences = random.sample(sentences, max(2, len(sentences) // 2))
-
-                for sent_idx, sent in enumerate(sentences, start=1):
-                    # Check termination conditions at sentence level
-                    if self.api_call_count >= self.max_api_calls:
-                        citation_review_data["diagnostics"]["terminated_early"] = True
-                        citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
-                        logging.warning("Terminating early: API call limit reached during sentence processing")
-                        break
-                        
-                    sentence_text = sent.text.strip()
-
-                    if not sentence_text or len(sentence_text) < 10:
-                        citation_review_data["diagnostics"]["empty_sentences"].append({
-                            "paragraph": para_idx,
-                            "sentence_index": sent_idx
-                        })
+                    relevant_papers = self.find_relevant_papers(sentence_text)
+                    
+                    if not relevant_papers:
                         continue
 
-                    citation_review_data["diagnostics"]["processed_sentences"] += 1
-                    total_sentences_processed += 1
-
-                    try:
-                        # Find relevant papers using academic search
-                        relevant_papers = self.find_relevant_papers(sentence_text)
+                    for paper in relevant_papers:
+                        title = paper.get('title')
+                        authors = paper.get('authors', [])
                         
-                        if not relevant_papers:
+                        if not title or not authors:
+                            continue
+                            
+                        valid_authors = [author for author in authors if author and str(author).strip()]
+                        if not valid_authors:
                             continue
 
-                        # Process only the best paper (since find_relevant_papers now returns max 1)
-                        for paper in relevant_papers:
-                            title = paper.get('title')
-                            authors = paper.get('authors', [])
-                            
-                            # Double-check authors (should be filtered already, but being extra safe)
-                            if not title or not authors:
-                                continue
-                                
-                            # Ensure we have valid author names
-                            valid_authors = [author for author in authors if author and str(author).strip()]
-                            if not valid_authors:
-                                continue
+                        year = paper.get('year')
+                        if year is None or year == 'None':
+                            year = "n.d."
+                        else:
+                            year = str(year)
 
-                            # Handle year properly - convert None to "n.d."
-                            year = paper.get('year')
-                            if year is None or year == 'None':
-                                year = "n.d."
-                            else:
-                                year = str(year)
-
-                            citation_id = str(uuid.uuid4())
-                            
-                            # Improved page numbering format
-                            page_number = f"P{current_page}"
-                            
-                            if int(year) >= 2015 and year != "n.d.":
-                                citation_entry = {
-                                    "id": citation_id,
-                                    "original_sentence": sentence_text,
-                                    "paper_details": {
-                                        "title": title,
-                                        "authors": valid_authors,
-                                        "year": year,
-                                        "url": paper.get('url', ''),
-                                        "doi": paper.get('doi', ''),
-                                        "venue": paper.get('venue', ''),
-                                        "citations": paper.get('citations', 0),
-                                        "relevance_score": round(paper.get('relevance_score', 0), 3),
-                                        "source": paper.get('source', 'Unknown')
-                                    },
-                                    "status": "pending_review",
-                                    "page_number": page_number,
-                                    "search_providers": self.search_providers,
-                                    "metadata": {
-                                        "paragraph_index": actual_para_idx,
-                                        "sentence_index": sent_idx,
-                                        "original_document_index": paragraph_indices[para_idx] if random_sample else para_idx
-                                    }
+                        citation_id = str(uuid.uuid4())
+                        page_number = f"P{current_page}"
+                        
+                        if int(year) >= 2015 and year != "n.d.":
+                            citation_entry = {
+                                "id": citation_id,
+                                "original_sentence": sentence_text,
+                                "paper_details": {
+                                    "title": title,
+                                    "authors": valid_authors,
+                                    "year": year,
+                                    "url": paper.get('url', ''),
+                                    "doi": paper.get('doi', ''),
+                                    "venue": paper.get('venue', ''),
+                                    "citations": paper.get('citations', 0),
+                                    "relevance_score": round(paper.get('relevance_score', 0), 3),
+                                    "source": paper.get('source', 'Unknown')
+                                },
+                                "status": "pending_review",
+                                "page_number": page_number,
+                                "search_providers": self.search_providers,
+                                "metadata": {
+                                    "paragraph_index": actual_para_idx,
+                                    "sentence_index": sent_idx,
+                                    "original_document_index": original_doc_idx,
+                                    "processing_order": processed_sentences
                                 }
+                            }
 
-                                citation_review_data["citations"].append(citation_entry)
-                                citation_review_data["total_citations"] += 1
-                                
-                                # Since we only want one citation per sentence, break after first valid citation
-                                break
+                            citation_review_data["citations"].append(citation_entry)
+                            citation_review_data["total_citations"] += 1
+                            break
 
-                    except Exception as e:
-                        error_msg = f"Error processing sentence '{sentence_text[:50]}...': {e}"
-                        logging.error(error_msg)
-                        citation_review_data["diagnostics"]["errors"].append(error_msg)
+                except Exception as e:
+                    error_msg = f"Error processing sentence '{sentence_text[:50]}...': {e}"
+                    logging.error(error_msg)
+                    citation_review_data["diagnostics"]["errors"].append(error_msg)
 
-                current_page += 1
+                if processed_sentences % 20 == 0:
+                    current_page += 1
             
-            # Update diagnostics
             citation_review_data["diagnostics"]["api_calls_made"] = self.api_call_count
+            citation_review_data["diagnostics"]["processed_paragraphs"] = len(set(s['para_idx'] for s in all_sentences[:processed_sentences]))
             
-            # Log results
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
-            logging.info(f"API calls made: {self.api_call_count}")
-            logging.info(f"Search providers used: {self.search_providers}")
+            logging.info(f"API calls made: {self.api_call_count}/{self.max_api_calls}")
+            logging.info(f"Processed sentences: {processed_sentences}/{total_sentences}")
             if citation_review_data["diagnostics"]["errors"]:
                 logging.warning(f"Errors encountered: {len(citation_review_data['diagnostics']['errors'])}")
 

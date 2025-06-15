@@ -1,14 +1,6 @@
-reegister,Done
-login,Done
-register with google and apple,Done
-login with google and apple,Done
-faqs,Done
-generate citation endpoint,DOne
-generated text from pdf file, Done
-generate citation based on this input
-Accept/reject citation end point Done
-Select year papers TBD
-Select citation type TBD
-Download citation Done
-Word count, Done
-Pay as you go, monthly and yearly payment plan Done
+1. Reference should generate all through the docs and there should be space to show some are of the writers knowledge.
+2. Page number should be correct
+3. The system is very slow back
+4. Harvard shou6be working 
+5. We should be sure of the numbers the system can take at once and possibly queue others so as not to break the system 
+Please kindly check these, I think these are the things we want to resolve
