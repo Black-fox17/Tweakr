@@ -22,6 +22,21 @@ subscription = APIRouter(prefix="/subscription", tags=["Subscription"])
 
 FLW_SECRET_KEY = config("FLW_SECRET_KEY")
 
+@subscription.get("/user_subscribed/{user_id}")
+async def user_subscribed(user_id: str, db: Session = Depends(get_db)):
+    user_subscribed = user_service.fetch_subscription(db,user_id)
+    if user_subscribed:
+        return success_response(
+            status_code=status.HTTP_200_OK,
+            message="User subscription fetched successfully",
+            data=jsonable_encoder(user_subscribed)
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User subscription not found"
+        )
+
 @subscription.get("/verify-payment-sync/{transaction_id}")
 async def verify_payment_sync(transaction_id: str):  # Changed from int to str
     """
