@@ -5,12 +5,12 @@ import random
 import logging
 import spacy
 from docx import Document
-from typing import List, Dict, Any, Optional
-import requests
-import time
-from urllib.parse import quote_plus
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from typing import List, Dict, Any
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from collections import defaultdict
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -22,16 +22,6 @@ class AcademicCitationProcessor:
     """
     
     def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None):
-        """
-        Initialize the academic citation processor.
-
-        Parameters:
-        - style (str): Citation style (APA, MLA, Chicago).
-        - search_providers (list): List of academic search providers in priority order.
-        - threshold (float): Minimum relevance threshold.
-        - top_k (int): Number of top relevant documents to retrieve per provider.
-        - max_api_calls (int): Maximum number of API calls allowed (auto-calculated if None).
-        """
         self.style = style
         self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
         self.threshold = threshold
@@ -39,6 +29,7 @@ class AcademicCitationProcessor:
         self.max_api_calls = max_api_calls
         self.api_call_count = 0
         self.matched_paper_titles = []
+        self._lock = threading.Lock()
         
         try:
             self.nlp = spacy.load("en_core_web_sm")
@@ -46,20 +37,10 @@ class AcademicCitationProcessor:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
         
-        self.session = requests.Session()
-        retry_strategy = Retry(
-            total=2,
-            status_forcelist=[429, 500, 502, 503, 504],
-            backoff_factor=1
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
-        
         self.rate_limits = {
-            'semantic_scholar': 0.1,
-            'crossref': 0.05,
-            'openalex': 0.05
+            'semantic_scholar': 0.05,
+            'crossref': 0.03,
+            'openalex': 0.03
         }
         
         self.last_api_call = {}
@@ -70,34 +51,121 @@ class AcademicCitationProcessor:
             'neuroscience', 'psychology', 'education', 'engineering', 'nursing',
             'public health', 'clinical', 'research', 'evidence-based', 'systematic'
         ]
+        
+        self.paper_cache = {}
 
     def _calculate_api_limits_and_eta(self, total_sentences: int) -> tuple:
-        """Calculate API limits and ETA based on sentence count"""
         if self.max_api_calls is not None:
             return self.max_api_calls, 0
         
-        citation_rate = 0.5
-        avg_providers_per_search = len(self.search_providers) 
+        citation_rate = 0.7
+        avg_providers_per_search = 1.2
         estimated_citations = int(total_sentences * citation_rate)
-        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 100)
-        calculated_max_calls = max(calculated_max_calls, 200)
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 80)
+        calculated_max_calls = max(calculated_max_calls, 150)
         
-        avg_time_per_call = sum(self.rate_limits.values()) / len(self.rate_limits) + 0.5
+        avg_time_per_call = 0.3
         estimated_eta_seconds = calculated_max_calls * avg_time_per_call
         
         self.max_api_calls = int(calculated_max_calls)
         
         return self.max_api_calls, estimated_eta_seconds
     
-    def _respect_rate_limit(self, provider: str):
-        """Ensure rate limiting is respected for each provider"""
-        if provider in self.last_api_call:
-            time_since_last = time.time() - self.last_api_call[provider]
-            required_delay = self.rate_limits.get(provider, 0.1)
-            if time_since_last < required_delay:
-                time.sleep(required_delay - time_since_last)
+    def smart_sentence_selection(self, all_sentences: list, max_sentences: int = None) -> list:
+        if not all_sentences:
+            return []
         
-        self.last_api_call[provider] = time.time()
+        if max_sentences is None:
+            max_sentences = min(len(all_sentences), 200)
+        
+        if len(all_sentences) <= max_sentences:
+            return all_sentences
+        
+        selected_sentences = []
+        
+        academic_keywords = set([
+            'study', 'research', 'analysis', 'data', 'results', 'findings', 'evidence',
+            'method', 'approach', 'theory', 'model', 'framework', 'hypothesis',
+            'significant', 'correlation', 'impact', 'effect', 'relationship',
+            'according', 'reported', 'demonstrated', 'showed', 'indicated',
+            'clinical', 'patient', 'treatment', 'therapy', 'intervention',
+            'algorithm', 'system', 'performance', 'evaluation', 'assessment'
+        ])
+        
+        priority_sentences = []
+        regular_sentences = []
+        
+        for sentence in all_sentences:
+            sentence_words = set(sentence['text'].lower().split())
+            if sentence_words.intersection(academic_keywords):
+                priority_sentences.append(sentence)
+            else:
+                regular_sentences.append(sentence)
+        
+        stratified_selection = []
+        
+        paragraphs = defaultdict(list)
+        for sentence in all_sentences:
+            paragraphs[sentence['actual_para_idx']].append(sentence)
+        
+        para_keys = list(paragraphs.keys())
+        para_count = len(para_keys)
+        
+        if para_count <= 5:
+            sentences_per_para = max_sentences // para_count
+            for para_idx in para_keys:
+                para_sentences = paragraphs[para_idx]
+                if len(para_sentences) <= sentences_per_para:
+                    stratified_selection.extend(para_sentences)
+                else:
+                    priority_in_para = [s for s in para_sentences if s in priority_sentences]
+                    regular_in_para = [s for s in para_sentences if s not in priority_sentences]
+                    
+                    priority_count = min(len(priority_in_para), sentences_per_para // 2)
+                    regular_count = sentences_per_para - priority_count
+                    
+                    selected_priority = random.sample(priority_in_para, priority_count) if priority_in_para else []
+                    selected_regular = random.sample(regular_in_para, min(regular_count, len(regular_in_para))) if regular_in_para else []
+                    
+                    stratified_selection.extend(selected_priority + selected_regular)
+        else:
+            sections = para_count // 3
+            section_size = para_count // sections
+            
+            for i in range(sections):
+                start_idx = i * section_size
+                end_idx = start_idx + section_size if i < sections - 1 else para_count
+                section_paras = para_keys[start_idx:end_idx]
+                
+                section_sentences = []
+                for para_idx in section_paras:
+                    section_sentences.extend(paragraphs[para_idx])
+                
+                section_quota = max_sentences // sections
+                if len(section_sentences) <= section_quota:
+                    stratified_selection.extend(section_sentences)
+                else:
+                    priority_in_section = [s for s in section_sentences if s in priority_sentences]
+                    regular_in_section = [s for s in section_sentences if s not in priority_sentences]
+                    
+                    priority_count = min(len(priority_in_section), section_quota // 2)
+                    regular_count = section_quota - priority_count
+                    
+                    selected_priority = random.sample(priority_in_section, priority_count) if priority_in_section else []
+                    selected_regular = random.sample(regular_in_section, min(regular_count, len(regular_in_section))) if regular_in_section else []
+                    
+                    stratified_selection.extend(selected_priority + selected_regular)
+        
+        if len(stratified_selection) < max_sentences:
+            remaining_sentences = [s for s in all_sentences if s not in stratified_selection]
+            additional_needed = max_sentences - len(stratified_selection)
+            additional_selected = random.sample(remaining_sentences, min(additional_needed, len(remaining_sentences)))
+            stratified_selection.extend(additional_selected)
+        elif len(stratified_selection) > max_sentences:
+            stratified_selection = random.sample(stratified_selection, max_sentences)
+        
+        return stratified_selection
+
 
     def is_dynamic_heading(self, para) -> bool:
         """
@@ -146,274 +214,246 @@ class AcademicCitationProcessor:
         
         return query
 
-    def search_all_providers(self, query: str, max_results: int = None) -> List[Dict]:
-        """
-        Search for academic papers using all available providers with fallback.
-        Terminates early if API limits are reached.
-        
-        Parameters:
-        - query (str): Search query text
-        - max_results (int): Maximum number of results to return per provider
-        
-        Returns:
-        - List[Dict]: Combined list of paper metadata from all providers
-        """
+    async def search_all_providers_async(self, query: str, max_results: int = None) -> List[Dict]:
         if self.api_call_count >= self.max_api_calls:
-            logging.warning(f"Maximum API calls ({self.max_api_calls}) exceeded - terminating search")
             return []
         
         query = self.clean_query(query)
         if not query:
             return []
         
-        max_results = max_results or self.top_k
-        all_papers = []
-        seen_titles = set()
+        cache_key = f"{query}_{max_results or self.top_k}"
+        if cache_key in self.paper_cache:
+            return self.paper_cache[cache_key]
         
-        for provider in self.search_providers:
-            if self.api_call_count >= self.max_api_calls:
-                logging.warning(f"API limit reached during provider {provider} - stopping search")
-                break
+        max_results = max_results or self.top_k
+        
+        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+        timeout = aiohttp.ClientTimeout(total=8, connect=3)
+        
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            tasks = []
+            
+            for provider in self.search_providers:
+                if self.api_call_count >= self.max_api_calls:
+                    break
                 
-            try:
-                logging.info(f"Searching {provider} for: '{query[:50]}...' (API calls: {self.api_call_count}/{self.max_api_calls})")
-                papers = self._search_provider(provider, query, max_results)
+                with self._lock:
+                    if self.api_call_count >= self.max_api_calls:
+                        break
+                    self.api_call_count += 1
                 
-                # Deduplicate by title
-                unique_papers = []
-                for paper in papers:
+                task = self._search_provider_async(session, provider, query, max_results)
+                tasks.append(task)
+            
+            if not tasks:
+                return []
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            all_papers = []
+            seen_titles = set()
+            
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                
+                for paper in result:
                     title = paper.get('title', '').lower().strip()
                     if title and title not in seen_titles:
                         seen_titles.add(title)
-                        unique_papers.append(paper)
+                        all_papers.append(paper)
+                        
+                        if len(all_papers) >= max_results * 2:
+                            break
                 
-                all_papers.extend(unique_papers)
-                logging.info(f"Found {len(unique_papers)} unique papers from {provider}")
-                
-                # If we have enough papers, we can stop searching
                 if len(all_papers) >= max_results * 2:
                     break
-                    
-            except Exception as e:
-                logging.error(f"Error searching {provider}: {e}")
-                # Count failed requests towards API limit to prevent infinite retries
-                self.api_call_count += 1
-                continue
         
+        self.paper_cache[cache_key] = all_papers
         return all_papers
 
-    def _search_provider(self, provider: str, query: str, max_results: int) -> List[Dict]:
-        """Search a specific provider with proper API call counting including retries"""
-        if self.api_call_count >= self.max_api_calls:
-            logging.warning(f"API limit reached before {provider} search")
-            return []
-            
-        self._respect_rate_limit(provider)
-        
-        # Count the API call before making it
-        self.api_call_count += 1
-        
+    async def _search_provider_async(self, session: aiohttp.ClientSession, provider: str, query: str, max_results: int) -> List[Dict]:
         try:
             if provider == 'semantic_scholar':
-                return self._search_semantic_scholar(query, max_results)
+                return await self._search_semantic_scholar_async(session, query, max_results)
             elif provider == 'crossref':
-                return self._search_crossref(query, max_results)
+                return await self._search_crossref_async(session, query, max_results)
             elif provider == 'openalex':
-                return self._search_openalex(query, max_results)
-            else:
-                logging.error(f"Unsupported search provider: {provider}")
-                return []
+                return await self._search_openalex_async(session, query, max_results)
         except Exception as e:
-            # Retries are handled by the requests session, but we already counted the call
             logging.error(f"Failed to search {provider}: {e}")
             return []
 
-    def _search_semantic_scholar(self, query: str, max_results: int) -> List[Dict]:
-        """Search using Semantic Scholar API"""
+    async def _search_semantic_scholar_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         try:
             url = 'https://api.semanticscholar.org/graph/v1/paper/search'
             params = {
                 'query': query,
-                'limit': min(max_results, 100),
-                'fields': 'title,authors,abstract,year,venue,citationCount,url,paperId'
+                'limit': min(max_results, 50),
+                'fields': 'title,authors,year,venue,citationCount,url,paperId'
             }
-            headers = {'Accept': 'application/json'}
             
-            response = self.session.get(url, params=params, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            papers = []
-            
-            for paper in data.get('data', []):
-                # Safely extract paper data
-                title = paper.get('title')
-                if not title:
-                    continue
+            async with session.get(url, params=params) as response:
+                if response.status == 429:
+                    await asyncio.sleep(1)
+                    return []
                 
-                authors = []
-                for author in paper.get('authors', []):
-                    if author and isinstance(author, dict):
-                        name = author.get('name')
-                        if name:
-                            authors.append(name)
+                response.raise_for_status()
+                data = await response.json()
                 
-                paper_data = {
-                    'title': title,
-                    'authors': authors,
-                    'abstract': paper.get('abstract') or '',
-                    'year': paper.get('year'),
-                    'venue': paper.get('venue') or '',
-                    'url': paper.get('url') or '',
-                    'citations': paper.get('citationCount', 0),
-                    'paper_id': paper.get('paperId') or '',
-                    'source': 'Semantic Scholar'
-                }
-                papers.append(paper_data)
-            
-            logging.info(f"Retrieved {len(papers)} papers from Semantic Scholar")
-            return papers
-            
-        except requests.exceptions.RequestException as e:
-            if hasattr(e, 'response') and e.response.status_code == 429:
-                logging.warning("Semantic Scholar rate limit hit, backing off...")
-                time.sleep(2)
-            raise e
+                papers = []
+                for paper in data.get('data', []):
+                    title = paper.get('title')
+                    if not title:
+                        continue
+                    
+                    authors = []
+                    for author in paper.get('authors', []):
+                        if author and isinstance(author, dict):
+                            name = author.get('name')
+                            if name:
+                                authors.append(name)
+                    
+                    if not authors:
+                        continue
+                    
+                    paper_data = {
+                        'title': title,
+                        'authors': authors,
+                        'year': paper.get('year'),
+                        'venue': paper.get('venue') or '',
+                        'url': paper.get('url') or '',
+                        'citations': paper.get('citationCount', 0),
+                        'paper_id': paper.get('paperId') or '',
+                        'source': 'Semantic Scholar'
+                    }
+                    papers.append(paper_data)
+                
+                return papers
         except Exception as e:
             logging.error(f"Error searching Semantic Scholar: {e}")
             return []
 
-    def _search_crossref(self, query: str, max_results: int) -> List[Dict]:
-        """Search using Crossref API"""
+    async def _search_crossref_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         try:
             url = 'https://api.crossref.org/works'
             params = {
                 'query': query,
-                'rows': min(max_results, 100),
+                'rows': min(max_results, 50),
                 'sort': 'relevance'
             }
-            headers = {'Accept': 'application/json'}
             
-            response = self.session.get(url, params=params, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            papers = []
-            
-            for item in data.get('message', {}).get('items', []):
-                # Extract title
-                title_list = item.get('title', [])
-                if not title_list:
-                    continue
-                title = ' '.join(title_list) if isinstance(title_list, list) else str(title_list)
+            async with session.get(url, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
                 
-                # Extract authors
-                authors = []
-                for author in item.get('author', []):
-                    if author and isinstance(author, dict):
-                        if 'given' in author and 'family' in author:
-                            authors.append(f"{author['given']} {author['family']}")
-                        elif 'family' in author:
-                            authors.append(author['family'])
+                papers = []
+                for item in data.get('message', {}).get('items', []):
+                    title_list = item.get('title', [])
+                    if not title_list:
+                        continue
+                    title = ' '.join(title_list) if isinstance(title_list, list) else str(title_list)
+                    
+                    authors = []
+                    for author in item.get('author', []):
+                        if author and isinstance(author, dict):
+                            if 'given' in author and 'family' in author:
+                                authors.append(f"{author['given']} {author['family']}")
+                            elif 'family' in author:
+                                authors.append(author['family'])
+                    
+                    if not authors:
+                        continue
+                    
+                    year = None
+                    try:
+                        if 'published-print' in item:
+                            year = item['published-print']['date-parts'][0][0]
+                        elif 'published-online' in item:
+                            year = item['published-online']['date-parts'][0][0]
+                    except (IndexError, KeyError, TypeError):
+                        pass
+                    
+                    venue = ''
+                    container_title = item.get('container-title', [])
+                    if container_title:
+                        venue = container_title[0] if isinstance(container_title, list) else str(container_title)
+                    
+                    paper_data = {
+                        'title': title,
+                        'authors': authors,
+                        'year': year,
+                        'venue': venue,
+                        'url': item.get('URL', ''),
+                        'citations': item.get('is-referenced-by-count', 0),
+                        'doi': item.get('DOI', ''),
+                        'source': 'Crossref'
+                    }
+                    papers.append(paper_data)
                 
-                # Extract year
-                year = None
-                try:
-                    if 'published-print' in item:
-                        year = item['published-print']['date-parts'][0][0]
-                    elif 'published-online' in item:
-                        year = item['published-online']['date-parts'][0][0]
-                except (IndexError, KeyError, TypeError):
-                    pass
-                
-                # Extract venue
-                venue = ''
-                container_title = item.get('container-title', [])
-                if container_title:
-                    venue = container_title[0] if isinstance(container_title, list) else str(container_title)
-                
-                paper_data = {
-                    'title': title,
-                    'authors': authors,
-                    'abstract': item.get('abstract', ''),
-                    'year': year,
-                    'venue': venue,
-                    'url': item.get('URL', ''),
-                    'citations': item.get('is-referenced-by-count', 0),
-                    'doi': item.get('DOI', ''),
-                    'source': 'Crossref'
-                }
-                papers.append(paper_data)
-            
-            logging.info(f"Retrieved {len(papers)} papers from Crossref")
-            return papers
-            
+                return papers
         except Exception as e:
             logging.error(f"Error searching Crossref: {e}")
             return []
 
-    def _search_openalex(self, query: str, max_results: int) -> List[Dict]:
-        """Search using OpenAlex API"""
+    async def _search_openalex_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         try:
             url = 'https://api.openalex.org/works'
             params = {
                 'search': query,
-                'per-page': min(max_results, 100),
+                'per-page': min(max_results, 50),
                 'sort': 'relevance_score:desc'
             }
-            headers = {'Accept': 'application/json'}
             
-            response = self.session.get(url, params=params, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            papers = []
-            
-            for work in data.get('results', []):
-                title = work.get('title')
-                if not title:
-                    continue
+            async with session.get(url, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
                 
-                # Extract authors
-                authors = []
-                for authorship in work.get('authorships', []):
-                    if authorship and isinstance(authorship, dict):
-                        author = authorship.get('author', {})
-                        if author and author.get('display_name'):
-                            authors.append(author['display_name'])
+                papers = []
+                for work in data.get('results', []):
+                    title = work.get('title')
+                    if not title:
+                        continue
+                    
+                    authors = []
+                    for authorship in work.get('authorships', []):
+                        if authorship and isinstance(authorship, dict):
+                            author = authorship.get('author', {})
+                            if author and author.get('display_name'):
+                                authors.append(author['display_name'])
+                    
+                    if not authors:
+                        continue
+                    
+                    venue = ''
+                    primary_location = work.get('primary_location', {})
+                    if primary_location and isinstance(primary_location, dict):
+                        source = primary_location.get('source', {})
+                        if source and isinstance(source, dict):
+                            venue = source.get('display_name', '')
+                    
+                    url_val = ''
+                    if primary_location and isinstance(primary_location, dict):
+                        url_val = primary_location.get('landing_page_url', '')
+                    
+                    paper_data = {
+                        'title': title,
+                        'authors': authors,
+                        'year': work.get('publication_year'),
+                        'venue': venue,
+                        'url': url_val,
+                        'citations': work.get('cited_by_count', 0),
+                        'doi': work.get('doi', ''),
+                        'source': 'OpenAlex'
+                    }
+                    papers.append(paper_data)
                 
-                # Extract venue
-                venue = ''
-                primary_location = work.get('primary_location', {})
-                if primary_location and isinstance(primary_location, dict):
-                    source = primary_location.get('source', {})
-                    if source and isinstance(source, dict):
-                        venue = source.get('display_name', '')
-                
-                # Extract URL
-                url_val = ''
-                if primary_location and isinstance(primary_location, dict):
-                    url_val = primary_location.get('landing_page_url', '')
-                
-                paper_data = {
-                    'title': title,
-                    'authors': authors,
-                    'abstract': work.get('abstract', ''),
-                    'year': work.get('publication_year'),
-                    'venue': venue,
-                    'url': url_val,
-                    'citations': work.get('cited_by_count', 0),
-                    'doi': work.get('doi', ''),
-                    'source': 'OpenAlex'
-                }
-                papers.append(paper_data)
-            
-            logging.info(f"Retrieved {len(papers)} papers from OpenAlex")
-            return papers
-            
+                return papers
         except Exception as e:
             logging.error(f"Error searching OpenAlex: {e}")
             return []
+
 
     def calculate_relevance_score(self, sentence: str, paper: Dict) -> float:
         """
@@ -508,118 +548,113 @@ class AcademicCitationProcessor:
         
         return min(relevance_score, 1.0)  # Cap at 1.0
 
-    def find_relevant_papers(self, sentence: str, return_all: bool = False) -> List[Dict]:
-        """
-        Find relevant papers for a sentence using multiple academic search APIs with fallback.
-        Returns only the best citation per sentence and excludes papers without authors.
+    def batch_process_sentences(self, sentences: list, batch_size: int = 5) -> list:
+        all_citations = []
         
-        Parameters:
-        - sentence (str): The sentence to find relevant papers for
-        - return_all (bool): If True, returns all papers above threshold; 
-                            If False, returns only the best matching paper
+        for i in range(0, len(sentences), batch_size):
+            if self.api_call_count >= self.max_api_calls:
+                break
+                
+            batch = sentences[i:i + batch_size]
+            
+            with ThreadPoolExecutor(max_workers=min(3, len(batch))) as executor:
+                future_to_sentence = {
+                    executor.submit(self.process_single_sentence, sentence): sentence 
+                    for sentence in batch
+                }
+                
+                for future in as_completed(future_to_sentence):
+                    if self.api_call_count >= self.max_api_calls:
+                        break
+                        
+                    sentence = future_to_sentence[future]
+                    try:
+                        citation = future.result(timeout=10)
+                        if citation:
+                            all_citations.append(citation)
+                    except Exception as e:
+                        logging.error(f"Error processing sentence: {e}")
+                        continue
         
-        Returns:
-        - List[Dict]: List of relevant papers with metadata (max 1 paper per sentence)
-        """
-        if not isinstance(sentence, str) or not sentence.strip():
-            logging.warning(f"Skipping empty or invalid sentence: '{sentence}'")
-            return []
+        return all_citations
 
-        # Check API limit before searching
-        if self.api_call_count >= self.max_api_calls:
-            logging.warning("API limit reached - no more searches allowed")
-            return []
-
-        # Search for papers across all providers
-        papers = self.search_all_providers(sentence)
-        if not papers:
-            return []
-
-        # Filter papers and calculate relevance scores
-        relevant_papers = []
-        for paper in papers:
+    def process_single_sentence(self, sentence_data: dict) -> dict:
+        try:
+            sentence_text = sentence_data['text']
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
             try:
-                # Skip papers without authors
-                authors = paper.get('authors', [])
-                if not authors or len(authors) == 0:
-                    logging.debug(f"Skipping paper without authors: '{paper.get('title', 'Unknown')}'")
-                    continue
-                
-                # Skip if authors list contains only empty strings or None values
-                valid_authors = [author for author in authors if author and str(author).strip()]
-                if not valid_authors:
-                    logging.debug(f"Skipping paper with invalid authors: '{paper.get('title', 'Unknown')}'")
-                    continue
-                
-                # Update paper with valid authors only
-                paper['authors'] = valid_authors
-                
-                # Calculate relevance score
-                relevance_score = self.calculate_relevance_score(sentence, paper)
-                if relevance_score >= self.threshold:
-                    paper['relevance_score'] = relevance_score
-                    relevant_papers.append(paper)
+                papers = loop.run_until_complete(self.search_all_providers_async(sentence_text))
+            finally:
+                loop.close()
+            
+            if not papers:
+                return None
+            
+            relevant_papers = []
+            for paper in papers:
+                try:
+                    authors = paper.get('authors', [])
+                    if not authors:
+                        continue
                     
-            except Exception as e:
-                logging.error(f"Error calculating relevance for paper '{paper.get('title', 'Unknown')}': {e}")
-                continue
-
-        # Sort by relevance score (best first)
-        relevant_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
-        
-        if return_all:
-            return relevant_papers
-        else:
-            # Return only the best paper (top 1) per sentence
-            return relevant_papers[:1] if relevant_papers else []
-
-    def format_citation(self, authors: List[str], year: str) -> str:
-        """
-        Format in-text citation based on the specified style.
-        """
-        if not authors:
-            authors = ["Unknown"]
-        
-        # Handle year safely - convert None/empty to "n.d."
-        if not year or year == 'None' or year is None:
-            year = "n.d."
-        else:
-            year = str(year)
-        
-        # Extract first name from the first author
-        first_author = authors[0] if authors else "Unknown"
-        if " " in first_author:
-            first_name = first_author.split(" ")[0]
-        else:
-            first_name = first_author
-
-        if self.style == "APA":
-            if len(authors) == 1:
-                return f"({first_name}, {year})"
-            else:
-                return f"({first_name} et al., {year})"
-        
-        elif self.style == "MLA":
-            if len(authors) == 1:
-                return f"({first_name} {year})"
-            else:
-                return f"({first_name} et al. {year})"
-        
-        elif self.style == "Chicago":
-            if len(authors) == 1:
-                return f"({first_name} {year})"
-            else:
-                return f"({first_name} et al. {year})"
-        
-        else:
-            raise ValueError(f"Unsupported citation style: {self.style}")
+                    valid_authors = [author for author in authors if author and str(author).strip()]
+                    if not valid_authors:
+                        continue
+                    
+                    paper['authors'] = valid_authors
+                    relevance_score = self.calculate_relevance_score(sentence_text, paper)
+                    
+                    if relevance_score >= self.threshold:
+                        paper['relevance_score'] = relevance_score
+                        relevant_papers.append(paper)
+                except Exception as e:
+                    continue
+            
+            if not relevant_papers:
+                return None
+            
+            best_paper = max(relevant_papers, key=lambda x: x.get('relevance_score', 0))
+            
+            year = best_paper.get('year')
+            if not year or year == 'None' or (isinstance(year, (int, str)) and str(year).isdigit() and int(year) < 2015):
+                return None
+            
+            citation_entry = {
+                "id": str(uuid.uuid4()),
+                "original_sentence": sentence_text,
+                "paper_details": {
+                    "title": best_paper.get('title'),
+                    "authors": best_paper.get('authors', []),
+                    "year": str(year) if year != 'None' else "n.d.",
+                    "url": best_paper.get('url', ''),
+                    "doi": best_paper.get('doi', ''),
+                    "venue": best_paper.get('venue', ''),
+                    "citations": best_paper.get('citations', 0),
+                    "relevance_score": round(best_paper.get('relevance_score', 0), 3),
+                    "source": best_paper.get('source', 'Unknown')
+                },
+                "status": "pending_review",
+                "page_number": sentence_data['actual_para_idx'],
+                "search_providers": self.search_providers,
+                "metadata": {
+                    "paragraph_index": sentence_data['actual_para_idx'],
+                    "sentence_index": sentence_data['sent_idx'],
+                    "original_document_index": sentence_data['original_doc_idx'],
+                    "processing_order": sentence_data.get('processing_order', 0)
+                }
+            }
+            
+            return citation_entry
+            
+        except Exception as e:
+            logging.error(f"Error in process_single_sentence: {e}")
+            return None
 
     def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 100, 
-                               random_sample: bool = True) -> Dict[str, Any]:
-        """
-        Prepare in-text citations for frontend review using multiple academic search APIs.
-        Enhanced version with random sentence selection and dynamic API limits.
-        """
+                            random_sample: bool = True) -> Dict[str, Any]:
         logging.info(f"Preparing citations for review using providers {self.search_providers} from file: '{input_path}'")
 
         if not os.path.exists(input_path):
@@ -652,7 +687,7 @@ class AcademicCitationProcessor:
                     sentences = list(self.nlp(paragraph_text).sents)
                     for sent_idx, sent in enumerate(sentences, start=1):
                         sentence_text = sent.text.strip()
-                        if sentence_text and len(sentence_text) >= 10:
+                        if sentence_text and len(sentence_text) >= 15:
                             all_sentences.append({
                                 'text': sentence_text,
                                 'para_idx': para_idx,
@@ -665,17 +700,13 @@ class AcademicCitationProcessor:
                     continue
 
             total_sentences = len(all_sentences)
-            logging.info(f"Total sentences to process: {total_sentences}")
+            logging.info(f"Total sentences found: {total_sentences}")
             
             calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
-            
             logging.info(f"API call limit set to: {calculated_max_calls}")
-            if estimated_eta > 0:
-                eta_minutes = estimated_eta / 60
-                logging.info(f"Estimated processing time: {eta_minutes:.1f} minutes")
-
-            if random_sample and total_sentences > 0:
-                random.shuffle(all_sentences)
+            
+            selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 150))
+            logging.info(f"Selected {len(selected_sentences)} sentences for processing")
 
             citation_review_data = {
                 "document_id": str(uuid.uuid4()),
@@ -685,6 +716,7 @@ class AcademicCitationProcessor:
                     "processed_paragraphs": 0,
                     "processed_sentences": 0,
                     "total_sentences_found": total_sentences,
+                    "selected_sentences": len(selected_sentences),
                     "skipped_paragraphs": [],
                     "empty_sentences": [],
                     "selected_paragraph_indices": paragraph_indices,
@@ -698,93 +730,24 @@ class AcademicCitationProcessor:
                 }
             }
 
-            processed_sentences = 0
+            for i, sentence in enumerate(selected_sentences):
+                sentence['processing_order'] = i + 1
+
+            citations = self.batch_process_sentences(selected_sentences, batch_size=3)
             
-            for sentence_data in all_sentences:
-                if self.api_call_count >= self.max_api_calls:
-                    citation_review_data["diagnostics"]["terminated_early"] = True
-                    citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
-                    logging.warning(f"Terminating early: API call limit ({self.max_api_calls}) reached")
-                    break
-                
-                sentence_text = sentence_data['text']
-                para_idx = sentence_data['para_idx']
-                actual_para_idx = sentence_data['actual_para_idx']
-                sent_idx = sentence_data['sent_idx']
-                original_doc_idx = sentence_data['original_doc_idx']
-                
-                processed_sentences += 1
-                citation_review_data["diagnostics"]["processed_sentences"] += 1
-
-                try:
-                    relevant_papers = self.find_relevant_papers(sentence_text)
-                    
-                    if not relevant_papers:
-                        continue
-
-                    for paper in relevant_papers:
-                        title = paper.get('title')
-                        authors = paper.get('authors', [])
-                        
-                        if not title or not authors:
-                            continue
-                            
-                        valid_authors = [author for author in authors if author and str(author).strip()]
-                        if not valid_authors:
-                            continue
-
-                        year = paper.get('year')
-                        if year is None or year == 'None':
-                            year = "n.d."
-                        else:
-                            year = str(year)
-
-                        citation_id = str(uuid.uuid4())
-                        
-                        if int(year) >= 2015 and year != "n.d.":
-                            citation_entry = {
-                                "id": citation_id,
-                                "original_sentence": sentence_text,
-                                "paper_details": {
-                                    "title": title,
-                                    "authors": valid_authors,
-                                    "year": year,
-                                    "url": paper.get('url', ''),
-                                    "doi": paper.get('doi', ''),
-                                    "venue": paper.get('venue', ''),
-                                    "citations": paper.get('citations', 0),
-                                    "relevance_score": round(paper.get('relevance_score', 0), 3),
-                                    "source": paper.get('source', 'Unknown')
-                                },
-                                "status": "pending_review",
-                                "page_number": actual_para_idx,
-                                "search_providers": self.search_providers,
-                                "metadata": {
-                                    "paragraph_index": actual_para_idx,
-                                    "sentence_index": sent_idx,
-                                    "original_document_index": original_doc_idx,
-                                    "processing_order": processed_sentences
-                                }
-                            }
-
-                            citation_review_data["citations"].append(citation_entry)
-                            citation_review_data["total_citations"] += 1
-                            break
-
-                except Exception as e:
-                    error_msg = f"Error processing sentence '{sentence_text[:50]}...': {e}"
-                    logging.error(error_msg)
-                    citation_review_data["diagnostics"]["errors"].append(error_msg)
-            
+            citation_review_data["citations"] = citations
+            citation_review_data["total_citations"] = len(citations)
             citation_review_data["diagnostics"]["api_calls_made"] = self.api_call_count
-            citation_review_data["diagnostics"]["processed_paragraphs"] = len(set(s['para_idx'] for s in all_sentences[:processed_sentences]))
+            citation_review_data["diagnostics"]["processed_sentences"] = len(selected_sentences)
+            citation_review_data["diagnostics"]["processed_paragraphs"] = len(set(s['para_idx'] for s in selected_sentences))
+            
+            if self.api_call_count >= self.max_api_calls:
+                citation_review_data["diagnostics"]["terminated_early"] = True
+                citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
             
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
             logging.info(f"API calls made: {self.api_call_count}/{self.max_api_calls}")
-            logging.info(f"Processed sentences: {processed_sentences}/{total_sentences}")
-            if citation_review_data["diagnostics"]["errors"]:
-                logging.warning(f"Errors encountered: {len(citation_review_data['diagnostics']['errors'])}")
-
+            
             return citation_review_data
 
         except Exception as e:
