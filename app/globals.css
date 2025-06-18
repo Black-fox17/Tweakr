@@ -1,0 +1,214 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&display=swap');
+
+
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .all-\[unset\] {
+    all: unset;
+  }
+}
+
+:root {
+  --absolutewhite: rgba(255, 255, 255, 1);
+  --body-large-medium-font-family: "Bricolage Grotesque", Helvetica;
+  --body-large-medium-font-size: 16px;
+  --body-large-medium-font-style: normal;
+  --body-large-medium-font-weight: 500;
+  --body-large-medium-letter-spacing: 0.20000000298023224px;
+  --body-large-medium-line-height: 160%;
+  --body-xlarge-medium-font-family: "Bricolage Grotesque", Helvetica;
+  --body-xlarge-medium-font-size: 18px;
+  --body-xlarge-medium-font-style: normal;
+  --body-xlarge-medium-font-weight: 500;
+  --body-xlarge-medium-letter-spacing: 0.20000000298023224px;
+  --body-xlarge-medium-line-height: 160%;
+  --body-xlarge-regular-font-family: "Bricolage Grotesque", Helvetica;
+  --body-xlarge-regular-font-size: 18px;
+  --body-xlarge-regular-font-style: normal;
+  --body-xlarge-regular-font-weight: 400;
+  --body-xlarge-regular-letter-spacing: 0.20000000298023224px;
+  --body-xlarge-regular-line-height: 160%;
+  --body-xlarge-semibold-font-family: "Bricolage Grotesque", Helvetica;
+  --body-xlarge-semibold-font-size: 18px;
+  --body-xlarge-semibold-font-style: normal;
+  --body-xlarge-semibold-font-weight: 600;
+  --body-xlarge-semibold-letter-spacing: 0.20000000298023224px;
+  --body-xlarge-semibold-line-height: 160%;
+  --dark-10: rgba(26, 26, 26, 1);
+  --dark-20: rgba(51, 51, 51, 1);
+  --dark-24: rgba(61, 61, 61, 1);
+  --drop-shadow-200: 0px 1px 4px 0px rgba(12, 12, 13, 0.05), 0px 1px 4px 0px
+    rgba(12, 12, 13, 0.1);
+  --foundation-blackb200: rgba(43, 43, 43, 1);
+  --foundation-blackblack-1: rgba(255, 255, 255, 1);
+  --foundation-blackblack-100: rgba(176, 176, 176, 1);
+  --foundation-blackblack-400: rgba(51, 51, 51, 1);
+  --foundation-blackblack-500: rgba(0, 0, 0, 1);
+  --foundation-blackblack-6: rgba(191, 191, 191, 1);
+  --foundation-blackblack-9: rgba(69, 69, 69, 1);
+  --foundation-blueblue-100: rgba(191, 244, 235, 1);
+  --foundation-blueblue-300: rgba(85, 94, 119, 1);
+  --foundation-blueblue-400: rgba(52, 63, 93, 1);
+  --foundation-blueblue-50: rgba(230, 231, 235, 1);
+  --foundation-blueblue-500: rgba(49, 218, 192, 1);
+  --foundation-blueblue-600: rgba(1, 14, 47, 1);
+  --foundation-blueblue-700: rgba(35, 155, 136, 1);
+  --foundation-blueblue-900: rgba(21, 92, 81, 1);
+  --foundation-greyg300: rgba(234, 235, 235, 1);
+  --foundation-whitewhite-300: rgba(243, 243, 243, 1);
+  --foundation-whitewhite-50: rgba(253, 253, 253, 1);
+  --foundation-whitewhite-500: rgba(237, 237, 237, 1);
+  --foundation-whitewhite-800: rgba(130, 130, 130, 1);
+  --foundation-whitewhite-900: rgba(100, 100, 100, 1);
+  --h2-semibold-font-family: "Bricolage Grotesque", Helvetica;
+  --h2-semibold-font-size: 40px;
+  --h2-semibold-font-style: normal;
+  --h2-semibold-font-weight: 600;
+  --h2-semibold-letter-spacing: 0px;
+  --h2-semibold-line-height: 160%;
+  --h4-semibold-font-family: "Bricolage Grotesque", Helvetica;
+  --h4-semibold-font-size: 24px;
+  --h4-semibold-font-style: normal;
+  --h4-semibold-font-weight: 600;
+  --h4-semibold-letter-spacing: 0px;
+  --h4-semibold-line-height: normal;
+  --h5-medium-font-family: "Bricolage Grotesque", Helvetica;
+  --h5-medium-font-size: 20px;
+  --h5-medium-font-style: normal;
+  --h5-medium-font-weight: 500;
+  --h5-medium-letter-spacing: 0px;
+  --h5-medium-line-height: 160%;
+  --h6-bold-font-family: "Bricolage Grotesque", Helvetica;
+  --h6-bold-font-size: 18px;
+  --h6-bold-font-style: normal;
+  --h6-bold-font-weight: 700;
+  --h6-bold-letter-spacing: 0px;
+  --h6-bold-line-height: 160%;
+  --h6-regular-font-family: "Bricolage Grotesque", Helvetica;
+  --h6-regular-font-size: 18px;
+  --h6-regular-font-style: normal;
+  --h6-regular-font-weight: 400;
+  --h6-regular-letter-spacing: 0px;
+  --h6-regular-line-height: 160%;
+  --h6-semibold-font-family: "Bricolage Grotesque", Helvetica;
+  --h6-semibold-font-size: 18px;
+  --h6-semibold-font-style: normal;
+  --h6-semibold-font-weight: 600;
+  --h6-semibold-letter-spacing: 0px;
+  --h6-semibold-line-height: 160%;
+  --light-90: rgba(225, 228, 235, 1);
+  --light-blue90: rgba(222, 229, 237, 1);
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 47.4% 11.2%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+
+    --card: transparent;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --ring: 215 20.2% 65.1%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 213 31% 91%;
+
+    --muted: 223 47% 11%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+
+    --accent: 216 34% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 215 20.2% 65.1%;
+
+    --border: 216 34% 17%;
+    --input: 216 34% 17%;
+
+    --card: transparent;
+    --card-foreground: 213 31% 91%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 1.2%;
+
+    --secondary: 222.2 47.4% 11.2%;
+    --secondary-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --ring: 216 34% 17%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+      font-family: 'Bricolage Grotesque', sans-serif;
+      contain: paint;
+      scroll-behavior: smooth;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+  }
+  
+  @media print {
+    body {
+      display: none;
+    }
+  }
+
+  /* Hides scrollbar for all browsers */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari, Opera */
+}
+
+/* globals.css or equivalent */
+.fw-modal {
+  z-index: 999999 !important;
+}
+
+}
