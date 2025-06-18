@@ -23,8 +23,7 @@ import { getCitationSuggestions, extractContent, charCount } from '@/service/cit
 import { useQuery } from '@tanstack/react-query'
 // import { verifySubscriptionPayment } from '@/service/subscriptionService'
 import CostBreakDown from '../components/CostBreakDown'
-import { annotateTextWithCitation } from '@/hooks/annotateTextWithCitations'
-// import { handleFinalize as handleFinalizeFromProcessor } from '@/lib/documentProcessor'
+import { annotateTextWithCitation, handleFinalizeFromProcessor } from '@/hooks/annotateTextWithCitations'
 import { toast } from 'sonner'
 import CitationReferencesBox from '../components/CitationReferencesBox'
 

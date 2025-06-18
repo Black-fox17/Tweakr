@@ -126,3 +126,28 @@ const formatReferences = (citations: Citation[], styleGuide: string): string => 
 
   return references.join('\n\n');
 };
+
+interface ProcessorResult {
+  text: string;
+  citations: Citation[];
+  styleGuide: string;
+}
+
+export const handleFinalizeFromProcessor = async (
+  extractResult: { text: string },
+  citationsFromBox: Citation[],
+  selectedStyleGuide: string
+): Promise<ProcessorResult> => {
+  try {
+    const annotatedText = annotateTextWithCitation(extractResult.text, citationsFromBox);
+    
+    return {
+      text: annotatedText,
+      citations: citationsFromBox,
+      styleGuide: selectedStyleGuide
+    };
+  } catch (error) {
+    console.error('Error in handleFinalizeFromProcessor:', error);
+    throw error;
+  }
+};
