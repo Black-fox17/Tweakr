@@ -4,7 +4,7 @@ interface Citation {
     paragraph_index: number;
     sentence_index: number;
   };
-  originalSentence: string;
+  original_sentence: string;
   paper_details: {
     title: string;
     authors: string[];
@@ -35,20 +35,20 @@ export const annotateTextWithCitation = (
 
   // Sort citations by length of the original sentence (longest first)
   const sortedCitations = [...acceptedCitations].sort(
-    (a, b) => (b.originalSentence?.length || 0) - (a.originalSentence?.length || 0)
+    (a, b) => (b.original_sentence?.length || 0) - (a.original_sentence?.length || 0)
   );
 
   sortedCitations.forEach((citation) => {
-    if (!citation.originalSentence || !citation.paper_details) return;
+    if (!citation.original_sentence || !citation.paper_details) return;
 
-    const { originalSentence } = citation;
+    const { original_sentence } = citation;
     const { authors, year } = citation.paper_details;
 
     const authorName =
       authors && authors.length > 0 ? authors[0].split(' ').pop() : 'Unknown';
     const citationMarker = `${authorName}, ${year}`;
 
-    const escapedSentence = originalSentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
+    const escapedSentence = original_sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').trim();
     const sentenceRegex = new RegExp(`(${escapedSentence}[.?!]?)\\s*`, 'i');
 
     annotatedText = annotatedText.replace(sentenceRegex, `$1 (${citationMarker}) `);
