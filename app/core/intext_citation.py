@@ -59,10 +59,10 @@ class AcademicCitationProcessor:
             return self.max_api_calls, 0
         
         citation_rate = 1
-        avg_providers_per_search = 2
+        avg_providers_per_search = 5
         estimated_citations = int(total_sentences * citation_rate)
         calculated_max_calls = min(estimated_citations * avg_providers_per_search, 150)
-        calculated_max_calls = max(calculated_max_calls, 300)
+        calculated_max_calls = 1000
         
         avg_time_per_call = 0.3
         estimated_eta_seconds = calculated_max_calls * avg_time_per_call
