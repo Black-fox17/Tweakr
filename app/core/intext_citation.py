@@ -550,18 +550,13 @@ class AcademicCitationProcessor:
 
     def batch_process_sentences(self, sentences: list, batch_size: int = 5) -> list:
         all_citations = []
-        total_sentences = len(sentences)
         
-        for i in range(0, total_sentences, batch_size):
+        for i in range(0, len(sentences), batch_size):
             if self.api_call_count >= self.max_api_calls:
                 break
                 
             batch = sentences[i:i + batch_size]
-            remaining_sentences = total_sentences - i
             
-            if remaining_sentences <= 0:
-                break
-                
             with ThreadPoolExecutor(max_workers=min(3, len(batch))) as executor:
                 future_to_sentence = {
                     executor.submit(self.process_single_sentence, sentence): sentence 
@@ -570,27 +565,21 @@ class AcademicCitationProcessor:
                 
                 for future in as_completed(future_to_sentence):
                     if self.api_call_count >= self.max_api_calls:
-                        executor.shutdown(wait=False)
                         break
                         
+                    sentence = future_to_sentence[future]
                     try:
                         citation = future.result(timeout=10)
                         if citation:
                             all_citations.append(citation)
-                    except Exception:
+                    except Exception as e:
+                        logging.error(f"Error processing sentence: {e}")
                         continue
-            
-            if len(all_citations) >= remaining_sentences or self.api_call_count >= self.max_api_calls:
-                break
         
         return all_citations
 
-
     def process_single_sentence(self, sentence_data: dict) -> dict:
         try:
-            if self.api_call_count >= self.max_api_calls:
-                return None
-                
             sentence_text = sentence_data['text']
             
             loop = asyncio.new_event_loop()
@@ -604,9 +593,7 @@ class AcademicCitationProcessor:
             if not papers:
                 return None
             
-            best_paper = None
-            best_score = 0
-            
+            relevant_papers = []
             for paper in papers:
                 try:
                     authors = paper.get('authors', [])
@@ -620,15 +607,16 @@ class AcademicCitationProcessor:
                     paper['authors'] = valid_authors
                     relevance_score = self.calculate_relevance_score(sentence_text, paper)
                     
-                    if relevance_score >= self.threshold and relevance_score > best_score:
-                        best_score = relevance_score
+                    if relevance_score >= self.threshold:
                         paper['relevance_score'] = relevance_score
-                        best_paper = paper
-                except Exception:
+                        relevant_papers.append(paper)
+                except Exception as e:
                     continue
             
-            if not best_paper:
+            if not relevant_papers:
                 return None
+            
+            best_paper = max(relevant_papers, key=lambda x: x.get('relevance_score', 0))
             
             year = best_paper.get('year')
             if not year or year == 'None' or (isinstance(year, (int, str)) and str(year).isdigit() and int(year) < 2015):
@@ -661,7 +649,8 @@ class AcademicCitationProcessor:
             
             return citation_entry
             
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error in process_single_sentence: {e}")
             return None
 
     def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 100, 
@@ -706,7 +695,8 @@ class AcademicCitationProcessor:
                                 'sent_idx': sent_idx,
                                 'original_doc_idx': paragraph_indices[para_idx] if random_sample else para_idx
                             })
-                except Exception:
+                except Exception as tokenize_error:
+                    logging.error(f"Error tokenizing paragraph {para_idx}: {tokenize_error}")
                     continue
 
             total_sentences = len(all_sentences)
@@ -716,8 +706,7 @@ class AcademicCitationProcessor:
             logging.info(f"API call limit set to: {calculated_max_calls}")
             
             selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 150))
-            sentences_to_process = len(selected_sentences)
-            logging.info(f"Selected {sentences_to_process} sentences for processing")
+            logging.info(f"Selected {len(selected_sentences)} sentences for processing")
 
             citation_review_data = {
                 "document_id": str(uuid.uuid4()),
@@ -727,7 +716,7 @@ class AcademicCitationProcessor:
                     "processed_paragraphs": 0,
                     "processed_sentences": 0,
                     "total_sentences_found": total_sentences,
-                    "selected_sentences": sentences_to_process,
+                    "selected_sentences": len(selected_sentences),
                     "skipped_paragraphs": [],
                     "empty_sentences": [],
                     "selected_paragraph_indices": paragraph_indices,
@@ -749,18 +738,12 @@ class AcademicCitationProcessor:
             citation_review_data["citations"] = citations
             citation_review_data["total_citations"] = len(citations)
             citation_review_data["diagnostics"]["api_calls_made"] = self.api_call_count
-            citation_review_data["diagnostics"]["processed_sentences"] = len(citations)
+            citation_review_data["diagnostics"]["processed_sentences"] = len(selected_sentences)
             citation_review_data["diagnostics"]["processed_paragraphs"] = len(set(s['para_idx'] for s in selected_sentences))
             
-            processed_all_sentences = len(citations) >= sentences_to_process
-            api_limit_reached = self.api_call_count >= self.max_api_calls
-            
-            if api_limit_reached:
+            if self.api_call_count >= self.max_api_calls:
                 citation_review_data["diagnostics"]["terminated_early"] = True
                 citation_review_data["diagnostics"]["termination_reason"] = "API call limit reached"
-            elif processed_all_sentences:
-                citation_review_data["diagnostics"]["terminated_early"] = False
-                citation_review_data["diagnostics"]["termination_reason"] = "All sentences processed successfully"
             
             logging.info(f"Citation processing completed. Total citations: {citation_review_data['total_citations']}")
             logging.info(f"API calls made: {self.api_call_count}/{self.max_api_calls}")
