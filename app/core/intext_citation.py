@@ -291,7 +291,7 @@ class AcademicCitationProcessor:
             params = {
                 'query': query,
                 'limit': min(max_results, 50),
-                'fields': 'title,authors,year,venue,citationCount,url,paperId'
+                'fields': 'title,authors,year,venue,citationCount,url,paperId,journal'
             }
             
             async with session.get(url, params=params) as response:
@@ -318,6 +318,9 @@ class AcademicCitationProcessor:
                     if not authors:
                         continue
                     
+                    journal_info = paper.get('journal', {}) or {}
+                    page_info = journal_info.get('pages', '') if isinstance(journal_info, dict) else ''
+                    
                     paper_data = {
                         'title': title,
                         'authors': authors,
@@ -326,7 +329,8 @@ class AcademicCitationProcessor:
                         'url': paper.get('url') or '',
                         'citations': paper.get('citationCount', 0),
                         'paper_id': paper.get('paperId') or '',
-                        'source': 'Semantic Scholar'
+                        'source': 'Semantic Scholar',
+                        'page': page_info
                     }
                     papers.append(paper_data)
                 
@@ -380,6 +384,8 @@ class AcademicCitationProcessor:
                     if container_title:
                         venue = container_title[0] if isinstance(container_title, list) else str(container_title)
                     
+                    page_info = item.get('page', '')
+                    
                     paper_data = {
                         'title': title,
                         'authors': authors,
@@ -388,7 +394,8 @@ class AcademicCitationProcessor:
                         'url': item.get('URL', ''),
                         'citations': item.get('is-referenced-by-count', 0),
                         'doi': item.get('DOI', ''),
-                        'source': 'Crossref'
+                        'source': 'Crossref',
+                        'page': page_info
                     }
                     papers.append(paper_data)
                 
@@ -437,6 +444,16 @@ class AcademicCitationProcessor:
                     if primary_location and isinstance(primary_location, dict):
                         url_val = primary_location.get('landing_page_url', '')
                     
+                    biblio = work.get('biblio', {}) or {}
+                    page_info = ''
+                    if isinstance(biblio, dict):
+                        first_page = biblio.get('first_page', '')
+                        last_page = biblio.get('last_page', '')
+                        if first_page and last_page:
+                            page_info = f"{first_page}-{last_page}"
+                        elif first_page:
+                            page_info = first_page
+                    
                     paper_data = {
                         'title': title,
                         'authors': authors,
@@ -445,7 +462,8 @@ class AcademicCitationProcessor:
                         'url': url_val,
                         'citations': work.get('cited_by_count', 0),
                         'doi': work.get('doi', ''),
-                        'source': 'OpenAlex'
+                        'source': 'OpenAlex',
+                        'page': page_info
                     }
                     papers.append(paper_data)
                 
@@ -622,6 +640,8 @@ class AcademicCitationProcessor:
             if not year or year == 'None' or (isinstance(year, (int, str)) and str(year).isdigit() and int(year) < 2015):
                 return None
             
+            page_number = best_paper.get('page', '') or best_paper.get('pages', '') or best_paper.get('page_number', '')
+            
             citation_entry = {
                 "id": str(uuid.uuid4()),
                 "original_sentence": sentence_text,
@@ -637,7 +657,7 @@ class AcademicCitationProcessor:
                     "source": best_paper.get('source', 'Unknown')
                 },
                 "status": "pending_review",
-                "page_number": sentence_data['actual_para_idx'],
+                "page_number": page_number,
                 "search_providers": self.search_providers,
                 "metadata": {
                     "paragraph_index": sentence_data['actual_para_idx'],
