@@ -27,12 +27,15 @@ class Document:
                     "error": "Please check your mail for a download link",
                 }
             )
-    
-        db.add(data)
+        
+        document_data = DocumentModel(**data.model_dump(), expires_at=datetime.utcnow() + timedelta(hours=24))
+
+        db.add(document_data)
         db.commit()
-        db.refresh(data)
-        return data
-    
+        db.refresh(document_data)
+        return document_data
+        
+
     def delete(self, db:Annotated[Session, Depends(get_db)], user_id: str):
         data = db.query(DocumentModel).filter(DocumentModel.user_id == user_id).first()
         if data:
