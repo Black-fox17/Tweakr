@@ -28,7 +28,6 @@ async def create_faq(
     new_document = document_service.create(db, data)
     
     download_url = str(request.url_for("download_document", document_id=new_document.user_id))
-
     response = success_response(
         message=SUCCESS,
         data={"download_url": download_url},
@@ -47,16 +46,17 @@ async def download_document(
     document_id: str, db: Annotated[Session, Depends(get_db)]
 ):
     document_data = db.query(DocumentModel).filter(DocumentModel.user_id == document_id).first()
-    
+   
     if not document_data:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    file_data = base64.b64decode(document_data.data)
-    
+   
+    base64_data = document_data.data.split(',')[1] if ',' in document_data.data else document_data.data
+    file_data = base64.b64decode(base64_data)
+   
     document_service.delete(db, document_data.user_id)
-    
+   
     return Response(
         content=file_data,
-        media_type="application/octet-stream",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": "attachment; filename=document.docx"}
     )
