@@ -28,6 +28,8 @@ async def create_faq(
     new_document = document_service.create(db, data)
     
     download_url = str(request.url_for("download_document", document_id=new_document.user_id))
+    document_service.update(db, new_document.user_id, download_url)
+    
     response = success_response(
         message=SUCCESS,
         data={"download_url": download_url},

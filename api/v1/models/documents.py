@@ -9,6 +9,7 @@ class DocumentModel(BaseTableModel):
     __tablename__ = "documents"
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable = False)
     data = Column(String, nullable = False)
+    download_url = Column(String, nullable = False)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=24))
 

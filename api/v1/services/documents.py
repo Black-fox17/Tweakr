@@ -25,6 +25,7 @@ class Document:
                 status_code=400,
                 detail={ 
                     "error": "Please check your mail for a download link",
+                    "download_url": existing_data.download_url
                 }
             )
         
@@ -42,6 +43,18 @@ class Document:
             db.delete(data)
             db.commit()
 
+    def update(self, db: Annotated[Session, Depends(get_db)], user_id: str, document_url: str):
+        document_data = db.query(DocumentModel).filter(DocumentModel.user_id == user_id).first()
+        
+        if not document_data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        # Update the document URL
+        document_data.download_url = document_url
+
+        
+        db.commit()
+        db.refresh(document_data)
+        return document_data
     def cleanup_expired(self, db: Annotated[Session, Depends(get_db)]):
         expired_docs = db.query(DocumentModel).filter(
             DocumentModel.expires_at <= datetime.utcnow()
