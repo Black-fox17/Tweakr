@@ -58,5 +58,5 @@ async def download_document(
     return Response(
         content=file_data,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": "attachment; filename=document.pdf"}
+        headers={"Content-Disposition": "attachment; filename=document.docx"}
     )
