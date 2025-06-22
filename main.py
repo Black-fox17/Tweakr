@@ -8,7 +8,10 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.openapi.utils import get_openapi
 from scalar_fastapi import get_scalar_api_reference
 from api.v1.routes import api_version_one
-
+from api.db.database import get_db
+import asyncio
+from threading import Thread
+from api.v1.services.documents import document_service
 
 # from app.monitoring.services import request_attributes_mapper, monitoring
 from datapipeline.routes import app as datapipeline_router
@@ -30,11 +33,34 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
+async def cleanup_expired_documents():
+    while True:
+        try:
+            db = next(get_db())
+            deleted_count = document_service.cleanup_expired(db)
+            if deleted_count > 0:
+                print(f"Cleaned up {deleted_count} expired documents")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+        finally:
+            if 'db' in locals():
+                db.close()
+        await asyncio.sleep(3600)
+
+def start_cleanup_task():
+    def run_cleanup():
+        asyncio.run(cleanup_expired_documents())
+    
+    cleanup_thread = Thread(target=run_cleanup, daemon=True)
+    cleanup_thread.start()
+
 
 app = FastAPI()
 
-# monitoring.instrument_fastapi(app, request_attributes_mapper=request_attributes_mapper)
-# monitoring.instrument_system_metrics()
+@app.on_event("startup")
+async def startup_event():
+    start_cleanup_task()
+    print("Background cleanup task started")
 
 app.openapi = custom_openapi
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/verify-code/")

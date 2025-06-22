@@ -16,6 +16,7 @@ class User(BaseTableModel):
     
     payments = relationship("Payments", back_populates="user", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    documents = relationship("DocumentModel", back_populates="user", cascade="all, delete-orphan")
     oauth = relationship("OAuth", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
