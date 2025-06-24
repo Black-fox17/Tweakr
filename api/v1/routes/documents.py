@@ -22,7 +22,7 @@ document = APIRouter(prefix="/document", tags=["Document"])
         422: {"description": "Validation Error"},
     },
 )
-async def create_faq(
+async def create_document(
     data: DocumentCreate, db: Annotated[Session, Depends(get_db)], request: Request
 ):
     new_document = document_service.create(db, data)
@@ -55,7 +55,7 @@ async def download_document(
     base64_data = document_data.data.split(',')[1] if ',' in document_data.data else document_data.data
     file_data = base64.b64decode(base64_data)
    
-    document_service.delete(db, document_data.user_id)
+    # document_service.delete(db, document_data.user_id)
    
     return Response(
         content=file_data,
