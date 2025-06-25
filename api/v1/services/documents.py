@@ -21,13 +21,7 @@ class Document:
         ).first()
         
         if existing_data:
-            raise HTTPException(
-                status_code=400,
-                detail={ 
-                    "error": "Please check your mail for a download link",
-                    "download_url": existing_data.download_url
-                }
-            )
+            self.delete(db,existing_data.user_id)
         
         document_data = DocumentModel(**data.model_dump(), expires_at=datetime.utcnow() + timedelta(hours=24))
 
