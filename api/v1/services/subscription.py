@@ -6,7 +6,9 @@ from typing import Any, Optional
 from api.core.base.services import Service
 from api.v1.schemas.subscription import CreateSubscriptionSchema
 from api.utils.db_validators import check_model_existence
-from fastapi import HTTPException, status
+from api.db.database import get_db
+from fastapi import Depends, HTTPException, status
+from typing import Annotated
 from datetime import datetime, timedelta
 
 
@@ -141,6 +143,15 @@ class SubscriptionService(Service):
                     )
 
         return query.all()
+    def cleanup_expired_subs(self, db: Annotated[Session, Depends(get_db)]):
+        expired_subs = db.query(Subscription).filter(
+            Subscription.end_date <= datetime.utcnow()
+        ).all()
+        
+        for doc in expired_subs:
+            db.delete(doc)
+        db.commit()
+        return len(expired_subs)
 
 
 subscription_service = SubscriptionService()

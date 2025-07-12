@@ -12,7 +12,7 @@ from api.db.database import get_db
 import asyncio
 from threading import Thread
 from api.v1.services.documents import document_service
-
+from api.v1.services.subscription import subscription_service
 # from app.monitoring.services import request_attributes_mapper, monitoring
 from datapipeline.routes import app as datapipeline_router
 
@@ -33,6 +33,19 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
+async def cleanup_expired_users():
+    while True:
+        try:
+            db = next(get_db())
+            deleted_count = subscription_service.cleanup_expired(db)
+            if deleted_count > 0:
+                print(f"Cleaned up {deleted_count} users")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+        finally:
+            if 'db' in locals():
+                db.close()
+        await asyncio.sleep(3600)
 async def cleanup_expired_documents():
     while True:
         try:
@@ -50,6 +63,7 @@ async def cleanup_expired_documents():
 def start_cleanup_task():
     def run_cleanup():
         asyncio.run(cleanup_expired_documents())
+        asyncio.run(cleanup_expired_users())
     
     cleanup_thread = Thread(target=run_cleanup, daemon=True)
     cleanup_thread.start()
