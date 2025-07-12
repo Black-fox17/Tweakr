@@ -60,14 +60,18 @@ async def cleanup_expired_documents():
                 db.close()
         await asyncio.sleep(3600)
 
+async def run_all_cleanup_tasks():
+    await asyncio.gather(
+        cleanup_expired_documents(),
+        cleanup_expired_users()
+    )
+
 def start_cleanup_task():
     def run_cleanup():
-        asyncio.run(cleanup_expired_documents())
-        asyncio.run(cleanup_expired_users())
-    
+        asyncio.run(run_all_cleanup_tasks())
+
     cleanup_thread = Thread(target=run_cleanup, daemon=True)
     cleanup_thread.start()
-
 
 app = FastAPI()
 
