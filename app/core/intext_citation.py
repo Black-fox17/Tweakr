@@ -272,6 +272,19 @@ class AcademicCitationProcessor:
         
         self.paper_cache[cache_key] = all_papers
         return all_papers
+    
+    async def _search_provider_async(self, session: aiohttp.ClientSession, provider: str, query: str, max_results: int) -> List[Dict]:
+        try:
+            if provider == 'semantic_scholar':
+                return await self._search_semantic_scholar_async(session, query, max_results)
+            elif provider == 'crossref':
+                return await self._search_crossref_async(session, query, max_results)
+            elif provider == 'openalex':
+                return await self._search_openalex_async(session, query, max_results)
+        except Exception as e:
+            logging.error(f"Failed to search {provider}: {e}")
+            return []
+
 
     async def _search_semantic_scholar_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         try:
