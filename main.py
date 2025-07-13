@@ -37,7 +37,7 @@ async def cleanup_expired_users():
     while True:
         try:
             db = next(get_db())
-            deleted_count = subscription_service.cleanup_expired(db)
+            deleted_count = subscription_service.cleanup_expired_subs(db)
             if deleted_count > 0:
                 print(f"Cleaned up {deleted_count} users")
         except Exception as e:

@@ -273,25 +273,13 @@ class AcademicCitationProcessor:
         self.paper_cache[cache_key] = all_papers
         return all_papers
 
-    async def _search_provider_async(self, session: aiohttp.ClientSession, provider: str, query: str, max_results: int) -> List[Dict]:
-        try:
-            if provider == 'semantic_scholar':
-                return await self._search_semantic_scholar_async(session, query, max_results)
-            elif provider == 'crossref':
-                return await self._search_crossref_async(session, query, max_results)
-            elif provider == 'openalex':
-                return await self._search_openalex_async(session, query, max_results)
-        except Exception as e:
-            logging.error(f"Failed to search {provider}: {e}")
-            return []
-
     async def _search_semantic_scholar_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         try:
             url = 'https://api.semanticscholar.org/graph/v1/paper/search'
             params = {
                 'query': query,
                 'limit': min(max_results, 50),
-                'fields': 'title,authors,year,venue,citationCount,url,paperId,journal'
+                'fields': 'title,authors,year,venue,citationCount,url,paperId,journal,publicationVenue,publicationDate'
             }
             
             async with session.get(url, params=params) as response:
@@ -319,18 +307,42 @@ class AcademicCitationProcessor:
                         continue
                     
                     journal_info = paper.get('journal', {}) or {}
-                    page_info = journal_info.get('pages', '') if isinstance(journal_info, dict) else ''
+                    pub_venue = paper.get('publicationVenue', {}) or {}
+                    
+                    venue_name = paper.get('venue', '')
+                    if not venue_name and isinstance(pub_venue, dict):
+                        venue_name = pub_venue.get('name', '')
+                    
+                    volume = ''
+                    issue = ''
+                    pages = ''
+                    
+                    if isinstance(journal_info, dict):
+                        volume = journal_info.get('volume', '')
+                        issue = journal_info.get('issue', '') or journal_info.get('number', '')
+                        pages = journal_info.get('pages', '')
+                    
+                    if isinstance(pub_venue, dict):
+                        if not volume:
+                            volume = pub_venue.get('volume', '')
+                        if not issue:
+                            issue = pub_venue.get('issue', '') or pub_venue.get('number', '')
+                        if not pages:
+                            pages = pub_venue.get('pages', '')
                     
                     paper_data = {
                         'title': title,
                         'authors': authors,
                         'year': paper.get('year'),
-                        'venue': paper.get('venue') or '',
+                        'venue': venue_name,
                         'url': paper.get('url') or '',
                         'citations': paper.get('citationCount', 0),
                         'paper_id': paper.get('paperId') or '',
                         'source': 'Semantic Scholar',
-                        'page': page_info
+                        'volume': volume,
+                        'issue': issue,
+                        'pages': pages,
+                        'publication_date': paper.get('publicationDate', '')
                     }
                     papers.append(paper_data)
                 
@@ -384,7 +396,9 @@ class AcademicCitationProcessor:
                     if container_title:
                         venue = container_title[0] if isinstance(container_title, list) else str(container_title)
                     
-                    page_info = item.get('page', '')
+                    volume = item.get('volume', '')
+                    issue = item.get('issue', '')
+                    pages = item.get('page', '')
                     
                     paper_data = {
                         'title': title,
@@ -395,7 +409,11 @@ class AcademicCitationProcessor:
                         'citations': item.get('is-referenced-by-count', 0),
                         'doi': item.get('DOI', ''),
                         'source': 'Crossref',
-                        'page': page_info
+                        'volume': volume,
+                        'issue': issue,
+                        'pages': pages,
+                        'publisher': item.get('publisher', ''),
+                        'issn': item.get('ISSN', [])
                     }
                     papers.append(paper_data)
                 
@@ -434,6 +452,10 @@ class AcademicCitationProcessor:
                         continue
                     
                     venue = ''
+                    volume = ''
+                    issue = ''
+                    pages = ''
+                    
                     primary_location = work.get('primary_location', {})
                     if primary_location and isinstance(primary_location, dict):
                         source = primary_location.get('source', {})
@@ -445,14 +467,15 @@ class AcademicCitationProcessor:
                         url_val = primary_location.get('landing_page_url', '')
                     
                     biblio = work.get('biblio', {}) or {}
-                    page_info = ''
                     if isinstance(biblio, dict):
+                        volume = biblio.get('volume', '')
+                        issue = biblio.get('issue', '')
                         first_page = biblio.get('first_page', '')
                         last_page = biblio.get('last_page', '')
                         if first_page and last_page:
-                            page_info = f"{first_page}-{last_page}"
+                            pages = f"{first_page}-{last_page}"
                         elif first_page:
-                            page_info = first_page
+                            pages = first_page
                     
                     paper_data = {
                         'title': title,
@@ -463,7 +486,10 @@ class AcademicCitationProcessor:
                         'citations': work.get('cited_by_count', 0),
                         'doi': work.get('doi', ''),
                         'source': 'OpenAlex',
-                        'page': page_info
+                        'volume': volume,
+                        'issue': issue,
+                        'pages': pages,
+                        'type': work.get('type', '')
                     }
                     papers.append(paper_data)
                 
@@ -471,8 +497,7 @@ class AcademicCitationProcessor:
         except Exception as e:
             logging.error(f"Error searching OpenAlex: {e}")
             return []
-
-
+        
     def calculate_relevance_score(self, sentence: str, paper: Dict) -> float:
         """
         Calculate a relevance score between a sentence and a paper.
@@ -640,8 +665,6 @@ class AcademicCitationProcessor:
             if not year or year == 'None' or (isinstance(year, (int, str)) and str(year).isdigit() and int(year) < 2015):
                 return None
             
-            page_number = best_paper.get('page', '') or best_paper.get('pages', '') or best_paper.get('page_number', '')
-            
             citation_entry = {
                 "id": str(uuid.uuid4()),
                 "original_sentence": sentence_text,
@@ -654,10 +677,16 @@ class AcademicCitationProcessor:
                     "venue": best_paper.get('venue', ''),
                     "citations": best_paper.get('citations', 0),
                     "relevance_score": round(best_paper.get('relevance_score', 0), 3),
-                    "source": best_paper.get('source', 'Unknown')
+                    "source": best_paper.get('source', 'Unknown'),
+                    "volume": best_paper.get('volume', ''),
+                    "issue": best_paper.get('issue', ''),
+                    "pages": best_paper.get('pages', ''),
+                    "publisher": best_paper.get('publisher', ''),
+                    "issn": best_paper.get('issn', []),
+                    "publication_date": best_paper.get('publication_date', ''),
+                    "type": best_paper.get('type', '')
                 },
                 "status": "pending_review",
-                "page_number": page_number,
                 "search_providers": self.search_providers,
                 "metadata": {
                     "paragraph_index": sentence_data['actual_para_idx'],
