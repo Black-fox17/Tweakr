@@ -496,19 +496,19 @@ class AcademicCitationProcessor:
                 await session.close()
         self.executor.shutdown(wait=True)
 
-# Example of how to run the async function
-async def main(file_path):
-    processor = AcademicCitationProcessor(threshold=0.1)
-    results = await processor.prepare_citations_for_review(file_path)
-    print(json.dumps(results, indent=2))
+# # Example of how to run the async function
+# async def main(file_path):
+#     processor = AcademicCitationProcessor(threshold=0.1)
+#     results = await processor.prepare_citations_for_review(file_path)
+#     print(json.dumps(results, indent=2))
 
-if __name__ == '__main__':
-    # Create a dummy docx for testing
-    doc = Document()
-    doc.add_paragraph("The theory of relativity was proposed by Einstein. It revolutionized physics.")
-    doc.add_paragraph("Recent studies in machine learning show promising results in natural language processing.")
-    doc.add_paragraph("This is another sentence about computer science and artificial intelligence.")
-    file_path = "dummy_document.docx"
-    doc.save(file_path)
+# if __name__ == '__main__':
+#     # Create a dummy docx for testing
+#     doc = Document()
+#     doc.add_paragraph("The theory of relativity was proposed by Einstein. It revolutionized physics.")
+#     doc.add_paragraph("Recent studies in machine learning show promising results in natural language processing.")
+#     doc.add_paragraph("This is another sentence about computer science and artificial intelligence.")
+#     file_path = "dummy_document.docx"
+#     doc.save(file_path)
     
-    asyncio.run(main(file_path))
+#     asyncio.run(main(file_path))
