@@ -88,7 +88,7 @@ class AcademicCitationProcessor:
         citation_rate = 0.8
         avg_providers_per_search = len(self.search_providers)
         estimated_citations = int(total_sentences * citation_rate)
-        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 2000)
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 5000)
         
         avg_time_per_call = 0.1
         estimated_eta_seconds = (calculated_max_calls / self.max_concurrent) * avg_time_per_call
@@ -101,7 +101,7 @@ class AcademicCitationProcessor:
             return []
         
         if max_sentences is None:
-            max_sentences = min(len(all_sentences), 300)
+            max_sentences = min(len(all_sentences), 500)
         
         if len(all_sentences) <= max_sentences:
             return all_sentences
@@ -111,15 +111,17 @@ class AcademicCitationProcessor:
             'method', 'approach', 'theory', 'model', 'framework', 'hypothesis',
             'significant', 'correlation', 'impact', 'effect', 'relationship',
             'according', 'reported', 'demonstrated', 'showed', 'indicated',
-            'suggests', 'concluded', 'observed', 'measured', 'tested'
+            'suggests', 'concluded', 'observed', 'measured', 'tested',
+            'literature', 'review', 'quantitative', 'qualitative', 'experiment',
+            'survey', 'interview', 'protocol', 'algorithm', 'simulation'
         }
         
         scored_sentences = []
         for s in all_sentences:
             text_lower = s['text'].lower()
             score = sum(1 for kw in academic_keywords if kw in text_lower)
-            if len(s['text'].split()) > 8:
-                score += 1
+            if len(s['text'].split()) > 10: # Increased word count for higher score
+                score += 2
             scored_sentences.append((s, score))
         
         scored_sentences.sort(key=lambda x: x[1], reverse=True)
@@ -412,7 +414,7 @@ class AcademicCitationProcessor:
             
             best_paper = max(relevant_papers, key=lambda x: x.relevance_score)
             
-            if not best_paper.year or (best_paper.year and best_paper.year < 2010):
+            if not best_paper.year or (best_paper.year and best_paper.year < 2015):
                 return None
 
             return {
@@ -437,7 +439,7 @@ class AcademicCitationProcessor:
             logging.debug(f"Error in process_single_sentence_async: {e}")
             return None
 
-    async def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 200) -> Dict[str, Any]:
+    async def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 1000) -> Dict[str, Any]:
         start_time = time.time()
         logging.info(f"Starting lightning-fast citation processing for: '{input_path}'")
         
@@ -467,7 +469,7 @@ class AcademicCitationProcessor:
 
         total_sentences = len(all_sentences)
         calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
-        selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 250))
+        selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 500))
         
         logging.info(f"Processing {len(selected_sentences)} sentences with {self.max_concurrent} concurrent requests")
         
