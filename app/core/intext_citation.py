@@ -85,15 +85,17 @@ class AcademicCitationProcessor:
         if self.max_api_calls is not None:
             return self.max_api_calls, 0
         
-        citation_rate = 0.8
-        avg_providers_per_search = len(self.search_providers)
+        citation_rate = 1
+        avg_providers_per_search = 5
         estimated_citations = int(total_sentences * citation_rate)
-        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 5000)
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 150)
+        calculated_max_calls = 1000
         
-        avg_time_per_call = 0.1
-        estimated_eta_seconds = (calculated_max_calls / self.max_concurrent) * avg_time_per_call
+        avg_time_per_call = 0.3
+        estimated_eta_seconds = calculated_max_calls * avg_time_per_call
         
         self.max_api_calls = int(calculated_max_calls)
+        
         return self.max_api_calls, estimated_eta_seconds
 
     def smart_sentence_selection(self, all_sentences: list, max_sentences: int = None) -> list:
