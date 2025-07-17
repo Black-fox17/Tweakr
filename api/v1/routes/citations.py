@@ -102,7 +102,7 @@ async def citation_review_route(
         )
 
         # Prepare citations for review
-        citation_review_data = citation_processor.prepare_citations_for_review(temp_file_path)
+        citation_review_data = await citation_processor.prepare_citations_for_review(temp_file_path)
 
         response_data = {
             "status": "success",
@@ -127,6 +127,134 @@ async def citation_review_route(
         except Exception as cleanup_error:
             logging.warning(f"Could not clean up temporary file: {cleanup_error}")
 
+
+@citations.post("/get-citation-batch")
+async def citation_batch_route(
+    files: List[UploadFile] = File(...),
+    collection_name: str = Form(...),
+    max_paragraphs: int = Form(100),
+    max_concurrent: int = Form(30)
+):
+    """
+    Batch processing route for multiple documents.
+    """
+    if len(files) > 10:
+        return JSONResponse({
+            "status": "error",
+            "message": "Maximum 10 files allowed per batch"
+        }, status_code=400)
+    
+    temp_files = []
+    citation_processor = None
+    
+    try:
+        start_time = time.time()
+        
+        for file in files:
+            if not file.filename.endswith('.docx'):
+                return JSONResponse({
+                    "status": "error",
+                    "message": f"File {file.filename} is not a .docx file"
+                }, status_code=400)
+        
+        collection_name = collection_name if collection_name != "others" else "healthcare_management"
+        
+        citation_processor = AcademicCitationProcessor(
+            style="APA",
+            threshold=0.0,
+            top_k=5,
+            max_concurrent=max_concurrent,
+            search_providers=["semantic_scholar", "crossref", "openalex"]
+        )
+        
+        batch_results = []
+        
+        for file in files:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+                temp_file_path = temp_file.name
+                temp_files.append(temp_file_path)
+                content = await file.read()
+                temp_file.write(content)
+            
+            try:
+                citation_review_data = await citation_processor.prepare_citations_for_review(
+                    temp_file_path, 
+                    max_paragraphs=max_paragraphs
+                )
+                
+                batch_results.append({
+                    "filename": file.filename,
+                    "status": "success",
+                    "document_id": citation_review_data["document_id"],
+                    "total_citations": citation_review_data["total_citations"],
+                    "citations": citation_review_data["citations"],
+                    "diagnostics": citation_review_data["diagnostics"]
+                })
+                
+            except Exception as file_error:
+                batch_results.append({
+                    "filename": file.filename,
+                    "status": "error",
+                    "message": str(file_error)
+                })
+        
+        total_processing_time = time.time() - start_time
+        
+        return {
+            "status": "success",
+            "batch_results": batch_results,
+            "batch_metrics": {
+                "total_files": len(files),
+                "successful_files": len([r for r in batch_results if r["status"] == "success"]),
+                "failed_files": len([r for r in batch_results if r["status"] == "error"]),
+                "total_processing_time_seconds": round(total_processing_time, 2)
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Error in batch citation route: {e}")
+        return JSONResponse({
+            "status": "error",
+            "message": "Batch processing error occurred"
+        }, status_code=500)
+        
+    finally:
+        if citation_processor:
+            try:
+                await citation_processor.cleanup()
+            except Exception as cleanup_error:
+                logging.warning(f"Citation processor cleanup failed: {cleanup_error}")
+        
+        for temp_file_path in temp_files:
+            try:
+                os.unlink(temp_file_path)
+            except Exception as cleanup_error:
+                logging.warning(f"Could not clean up temporary file: {cleanup_error}")
+
+@citations.get("/health")
+async def health_check():
+    """
+    Health check endpoint for citation service.
+    """
+    try:
+        citation_processor = AcademicCitationProcessor(max_concurrent=1)
+        test_result = await citation_processor.search_all_providers_async("test query", max_results=1)
+        await citation_processor.cleanup()
+        
+        return {
+            "status": "healthy",
+            "services": {
+                "citation_processor": "operational",
+                "api_providers": len(test_result) > 0
+            },
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return JSONResponse({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": time.time()
+        }, status_code=503)
 @citations.post("/extract-content")
 async def extract_paper_content(file: UploadFile = File(...)):
     """

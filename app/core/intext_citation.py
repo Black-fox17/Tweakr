@@ -38,7 +38,7 @@ class CircuitBreaker:
         self.last_failure_time = None
         self.state = 'closed'
     
-    def call(self, func):
+    async def call(self, func):
         if self.state == 'open':
             if time.time() - self.last_failure_time > self.recovery_timeout:
                 self.state = 'half-open'
@@ -46,7 +46,7 @@ class CircuitBreaker:
                 raise Exception("Circuit breaker is open")
         
         try:
-            result = func()
+            result = await func()
             if self.state == 'half-open':
                 self.state = 'closed'
                 self.failure_count = 0
@@ -495,20 +495,3 @@ class AcademicCitationProcessor:
             if not session.closed:
                 await session.close()
         self.executor.shutdown(wait=True)
-
-# # Example of how to run the async function
-# async def main(file_path):
-#     processor = AcademicCitationProcessor(threshold=0.1)
-#     results = await processor.prepare_citations_for_review(file_path)
-#     print(json.dumps(results, indent=2))
-
-# if __name__ == '__main__':
-#     # Create a dummy docx for testing
-#     doc = Document()
-#     doc.add_paragraph("The theory of relativity was proposed by Einstein. It revolutionized physics.")
-#     doc.add_paragraph("Recent studies in machine learning show promising results in natural language processing.")
-#     doc.add_paragraph("This is another sentence about computer science and artificial intelligence.")
-#     file_path = "dummy_document.docx"
-#     doc.save(file_path)
-    
-#     asyncio.run(main(file_path))
