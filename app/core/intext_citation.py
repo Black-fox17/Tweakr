@@ -90,10 +90,6 @@ class AcademicCitationProcessor:
 
     def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
         enhanced_query = original_query
-        
-        if self.research_context:
-            enhanced_query = f"{self.research_context} {enhanced_query}"
-        
         if self.document_category:
             enhanced_query = f"{enhanced_query} {self.document_category}"
         
