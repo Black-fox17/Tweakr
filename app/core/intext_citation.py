@@ -62,7 +62,7 @@ class CircuitBreaker:
             raise e
 
 class AcademicCitationProcessor:
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50, additional_context=""):
         self.style = style
         self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
         self.threshold = threshold
@@ -72,6 +72,8 @@ class AcademicCitationProcessor:
         self.api_call_count = 0
         self.matched_paper_titles = []
         
+        self.additional_context = additional_context
+
         self.research_context = ""
         self.document_category = ""
         self.field_keywords = []
@@ -506,7 +508,7 @@ class AcademicCitationProcessor:
         full_text = "\n".join([p.text for p in doc.paragraphs])
         
         # Get context from Gemini
-        context_data = await get_document_context_with_gemini(full_text)
+        context_data = await get_document_context_with_gemini(full_text, self.additional_context)
         self.research_context = context_data.get("research_context", "")
         self.document_category = context_data.get("document_category", "")
         self.field_keywords = context_data.get("field_keywords", [])

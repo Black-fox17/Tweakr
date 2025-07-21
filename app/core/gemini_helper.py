@@ -4,7 +4,6 @@ import json
 import logging
 from decouple import config
 
-# Configure the generative AI model with the API key from environment variables
 try:
     genai.configure(api_key=config("GOOGLE_GEMINI_KEY"))
 except KeyError:
@@ -12,7 +11,7 @@ except KeyError:
     pass
 
 
-async def get_document_context_with_gemini(content: str) -> dict:
+async def get_document_context_with_gemini(content: str, additional_context: str) -> dict:
     """
     Uses the Gemini API to analyze document content and extract context.
 
@@ -45,7 +44,8 @@ async def get_document_context_with_gemini(content: str) -> dict:
     )
 
     prompt = f"""
-        Analyze the following academic document content and provide a structured JSON output with three keys:
+        Analyze the following academic document content with the provided additional context.
+        and provide a structured JSON output with three keys:
         1. "research_context": A concise, one-sentence summary of the core research topic or argument.
         2. "document_category": The most specific academic field or sub-field it belongs to (e.g., "computational_linguistics", "particle_physics", "macroeconomics"). Use a single, snake_cased string.
         3. "field_keywords": A list of 5-7 essential keywords or technical terms from the document.
@@ -54,6 +54,10 @@ async def get_document_context_with_gemini(content: str) -> dict:
         ---
         {content_sample}
         ---
+        Additional Context:
+        {additional_context}
+
+        Ensure the output is based solely on the content provided and the additional context TAKE NOTE OF THE ADDITIONAL CONTEXT and make sure to return a structured json response based on the provided keys.
     """
 
     try:
