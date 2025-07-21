@@ -6,18 +6,9 @@ from pathlib import Path
 import tempfile
 from docx import Document
 
-from app.core.references_generator import ReferenceGenerator
 from app.core.intext_citation import AcademicCitationProcessor
-from app.core.paper_matcher import PaperKeywordMatcher
-from app.auth.helpers import get_current_active_user
 from app.core.wordcount import count_words_in_docx
-from app.core.category import get_document_category
-from datapipeline.core.database import get_session_with_ctx_manager
-from datapipeline.models.papers import Papers
 import logging
-import uuid
-import json
-from typing import List, Dict, Any
 import os
 
 citations = APIRouter(prefix="/citations", tags=["Citations"])
@@ -28,21 +19,24 @@ async def get_categories():
     Fetch unique categories from the database.
     """
     try:
-        with get_session_with_ctx_manager() as session:
-            categories = session.query(Papers.category).distinct().order_by(Papers.category).all()
-            # Standardize categories and remove duplicates
-            standardized_categories = [category[0].lower().replace(" ", "_").strip("_") for category in categories if category[0]]
-            unique_categories = sorted(list(set(standardized_categories)))
+        categories = [
+            "adult_care",
+            "biology",
+            "business_management",
+            "cancer",
+            "computer_science",
+            "corporate_governance",
+            "healthcare_management",
+            "machine_learning",
+            "marketing",
+            "mathematics",
+            "neuroscience",
+            "physics",
+            "quantum_physics",
+            "others"
+        ]
 
-            # Ensure "healthcare_management" is unified
-            unwanted_categories = {"research_topic_2", "research_topic_3", "healthcare","governance"}
-            unique_categories = ["healthcare_management" if cat.startswith("healthcare_management") else cat for cat in unique_categories]
-            unique_categories = [cat for cat in unique_categories if cat not in unwanted_categories]
-            # Add "others" category
-            if "others" not in unique_categories:
-                unique_categories.append("others")
-
-            return {"categories": unique_categories}
+        return {"categories": categories}
     except Exception as e:
         logging.error(f"Error fetching categories: {e}")
         return JSONResponse(
@@ -75,13 +69,14 @@ async def document_category(input_file: UploadFile = File(...)):
         # Save the uploaded file to the temporary file
         temp_file.write(await input_file.read())
 
-    valid_category = get_document_category(temp_file_path)
+    valid_category = "healthcare_management"
     return{"category": valid_category}
     
 @citations.post("/get-citation")
 async def citation_review_route(
     input_file: UploadFile = File(...),
-    collection_name: str = Form(...)):
+    collection_name: str = Form(...)
+):
     """
     Route for handling citation review process with collection fallback.
     """
@@ -91,9 +86,6 @@ async def citation_review_route(
         temp_file.write(await input_file.read())
 
     try:
-        # Handle the "others" case by defaulting to healthcare_management
-        collection_name = collection_name if collection_name != "others" else "healthcare_management"
-        
         # Initialize the citation processor
         citation_processor = AcademicCitationProcessor(
             style="APA",
@@ -109,6 +101,7 @@ async def citation_review_route(
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
             "citations": citation_review_data["citations"],
+            "context_info": citation_review_data["context_info"],
         }
 
         return response_data
@@ -128,108 +121,108 @@ async def citation_review_route(
             logging.warning(f"Could not clean up temporary file: {cleanup_error}")
 
 
-@citations.post("/get-citation-batch")
-async def citation_batch_route(
-    files: List[UploadFile] = File(...),
-    collection_name: str = Form(...),
-    max_paragraphs: int = Form(100),
-    max_concurrent: int = Form(30)
-):
-    """
-    Batch processing route for multiple documents.
-    """
-    if len(files) > 10:
-        return JSONResponse({
-            "status": "error",
-            "message": "Maximum 10 files allowed per batch"
-        }, status_code=400)
+# @citations.post("/get-citation-batch")
+# async def citation_batch_route(
+#     files: List[UploadFile] = File(...),
+#     collection_name: str = Form(...),
+#     max_paragraphs: int = Form(100),
+#     max_concurrent: int = Form(30)
+# ):
+#     """
+#     Batch processing route for multiple documents.
+#     """
+#     if len(files) > 10:
+#         return JSONResponse({
+#             "status": "error",
+#             "message": "Maximum 10 files allowed per batch"
+#         }, status_code=400)
     
-    temp_files = []
-    citation_processor = None
+#     temp_files = []
+#     citation_processor = None
     
-    try:
-        start_time = time.time()
+#     try:
+#         start_time = time.time()
         
-        for file in files:
-            if not file.filename.endswith('.docx'):
-                return JSONResponse({
-                    "status": "error",
-                    "message": f"File {file.filename} is not a .docx file"
-                }, status_code=400)
+#         for file in files:
+#             if not file.filename.endswith('.docx'):
+#                 return JSONResponse({
+#                     "status": "error",
+#                     "message": f"File {file.filename} is not a .docx file"
+#                 }, status_code=400)
         
-        collection_name = collection_name if collection_name != "others" else "healthcare_management"
+#         collection_name = collection_name if collection_name != "others" else "healthcare_management"
         
-        citation_processor = AcademicCitationProcessor(
-            style="APA",
-            threshold=0.0,
-            top_k=5,
-            max_concurrent=max_concurrent,
-            search_providers=["semantic_scholar", "crossref", "openalex"]
-        )
+#         citation_processor = AcademicCitationProcessor(
+#             style="APA",
+#             threshold=0.0,
+#             top_k=5,
+#             max_concurrent=max_concurrent,
+#             search_providers=["semantic_scholar", "crossref", "openalex"]
+#         )
         
-        batch_results = []
+#         batch_results = []
         
-        for file in files:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
-                temp_file_path = temp_file.name
-                temp_files.append(temp_file_path)
-                content = await file.read()
-                temp_file.write(content)
+#         for file in files:
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+#                 temp_file_path = temp_file.name
+#                 temp_files.append(temp_file_path)
+#                 content = await file.read()
+#                 temp_file.write(content)
             
-            try:
-                citation_review_data = await citation_processor.prepare_citations_for_review(
-                    temp_file_path, 
-                    max_paragraphs=max_paragraphs
-                )
+#             try:
+#                 citation_review_data = await citation_processor.prepare_citations_for_review(
+#                     temp_file_path, 
+#                     max_paragraphs=max_paragraphs
+#                 )
                 
-                batch_results.append({
-                    "filename": file.filename,
-                    "status": "success",
-                    "document_id": citation_review_data["document_id"],
-                    "total_citations": citation_review_data["total_citations"],
-                    "citations": citation_review_data["citations"],
-                    "diagnostics": citation_review_data["diagnostics"]
-                })
+#                 batch_results.append({
+#                     "filename": file.filename,
+#                     "status": "success",
+#                     "document_id": citation_review_data["document_id"],
+#                     "total_citations": citation_review_data["total_citations"],
+#                     "citations": citation_review_data["citations"],
+#                     "diagnostics": citation_review_data["diagnostics"]
+#                 })
                 
-            except Exception as file_error:
-                batch_results.append({
-                    "filename": file.filename,
-                    "status": "error",
-                    "message": str(file_error)
-                })
+#             except Exception as file_error:
+#                 batch_results.append({
+#                     "filename": file.filename,
+#                     "status": "error",
+#                     "message": str(file_error)
+#                 })
         
-        total_processing_time = time.time() - start_time
+#         total_processing_time = time.time() - start_time
         
-        return {
-            "status": "success",
-            "batch_results": batch_results,
-            "batch_metrics": {
-                "total_files": len(files),
-                "successful_files": len([r for r in batch_results if r["status"] == "success"]),
-                "failed_files": len([r for r in batch_results if r["status"] == "error"]),
-                "total_processing_time_seconds": round(total_processing_time, 2)
-            }
-        }
+#         return {
+#             "status": "success",
+#             "batch_results": batch_results,
+#             "batch_metrics": {
+#                 "total_files": len(files),
+#                 "successful_files": len([r for r in batch_results if r["status"] == "success"]),
+#                 "failed_files": len([r for r in batch_results if r["status"] == "error"]),
+#                 "total_processing_time_seconds": round(total_processing_time, 2)
+#             }
+#         }
         
-    except Exception as e:
-        logging.error(f"Error in batch citation route: {e}")
-        return JSONResponse({
-            "status": "error",
-            "message": "Batch processing error occurred"
-        }, status_code=500)
+#     except Exception as e:
+#         logging.error(f"Error in batch citation route: {e}")
+#         return JSONResponse({
+#             "status": "error",
+#             "message": "Batch processing error occurred"
+#         }, status_code=500)
         
-    finally:
-        if citation_processor:
-            try:
-                await citation_processor.cleanup()
-            except Exception as cleanup_error:
-                logging.warning(f"Citation processor cleanup failed: {cleanup_error}")
+#     finally:
+#         if citation_processor:
+#             try:
+#                 await citation_processor.cleanup()
+#             except Exception as cleanup_error:
+#                 logging.warning(f"Citation processor cleanup failed: {cleanup_error}")
         
-        for temp_file_path in temp_files:
-            try:
-                os.unlink(temp_file_path)
-            except Exception as cleanup_error:
-                logging.warning(f"Could not clean up temporary file: {cleanup_error}")
+#         for temp_file_path in temp_files:
+#             try:
+#                 os.unlink(temp_file_path)
+#             except Exception as cleanup_error:
+#                 logging.warning(f"Could not clean up temporary file: {cleanup_error}")
 
 @citations.get("/health")
 async def health_check():

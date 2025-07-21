@@ -16,6 +16,8 @@ from asyncio import Semaphore, Queue
 import weakref
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
+from app.core.gemini_helper import get_document_context_with_gemini
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,6 +31,7 @@ class SearchResult:
     citations: int
     source: str
     relevance_score: float = 0.0
+    context_match: float = 0.0
 
 class CircuitBreaker:
     def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
@@ -69,6 +72,10 @@ class AcademicCitationProcessor:
         self.api_call_count = 0
         self.matched_paper_titles = []
         
+        self.research_context = ""
+        self.document_category = ""
+        self.field_keywords = []
+        
         self.semaphore = Semaphore(max_concurrent)
         self.session_cache = weakref.WeakValueDictionary()
         self.circuit_breakers = {provider: CircuitBreaker() for provider in self.search_providers}
@@ -80,6 +87,21 @@ class AcademicCitationProcessor:
         except OSError:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
+
+    def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
+        enhanced_query = original_query
+        
+        if self.research_context:
+            enhanced_query = f"{self.research_context} {enhanced_query}"
+        
+        if self.document_category:
+            enhanced_query = f"{enhanced_query} {self.document_category}"
+        
+        if self.field_keywords:
+            field_terms = " ".join(self.field_keywords[:3])
+            enhanced_query = f"{enhanced_query} {field_terms}"
+        
+        return self.clean_query(enhanced_query)
 
     def _calculate_api_limits_and_eta(self, total_sentences: int) -> tuple:
         if self.max_api_calls is not None:
@@ -118,12 +140,20 @@ class AcademicCitationProcessor:
             'survey', 'interview', 'protocol', 'algorithm', 'simulation'
         }
         
+        context_keywords = set(self.field_keywords + [self.research_context, self.document_category])
+        context_keywords = {kw.lower() for kw in context_keywords if kw}
+        
         scored_sentences = []
         for s in all_sentences:
             text_lower = s['text'].lower()
             score = sum(1 for kw in academic_keywords if kw in text_lower)
-            if len(s['text'].split()) > 10: # Increased word count for higher score
+            context_score = sum(1 for kw in context_keywords if kw in text_lower)
+            
+            if len(s['text'].split()) > 10:
                 score += 2
+            
+            score += context_score * 2
+            
             scored_sentences.append((s, score))
         
         scored_sentences.sort(key=lambda x: x[1], reverse=True)
@@ -148,7 +178,7 @@ class AcademicCitationProcessor:
         if query and query[0].isdigit() and '.' in query[:5]:
             query = query.split('.', 1)[1].strip()
         words = query.split()
-        return ' '.join(words[:12])
+        return ' '.join(words[:15])
 
     async def get_session(self) -> aiohttp.ClientSession:
         session_id = id(asyncio.current_task())
@@ -171,13 +201,14 @@ class AcademicCitationProcessor:
         return self.session_cache[session_id]
 
     @alru_cache(maxsize=2048)
-    async def search_all_providers_async(self, query: str, max_results: int = None) -> List[SearchResult]:
+    async def search_all_providers_async(self, query: str, context: str = "", max_results: int = None) -> List[SearchResult]:
         async with self.semaphore:
             if self.api_call_count >= self.max_api_calls:
                 return []
             
-            query = self.clean_query(query)
-            if not query or len(query) < 5:
+            enhanced_query = self.enhance_query_with_context(query, context)
+            
+            if not enhanced_query or len(enhanced_query) < 5:
                 return []
             
             max_results = max_results or self.top_k
@@ -189,7 +220,7 @@ class AcademicCitationProcessor:
                     break
                 
                 self.api_call_count += 1
-                task = self._search_provider_with_circuit_breaker(session, provider, query, max_results)
+                task = self._search_provider_with_circuit_breaker(session, provider, enhanced_query, max_results)
                 tasks.append(task)
             
             if not tasks:
@@ -208,9 +239,31 @@ class AcademicCitationProcessor:
                     title = paper.title.lower().strip() if paper.title else ''
                     if title and title not in seen_titles:
                         seen_titles.add(title)
+                        paper.context_match = self.calculate_context_match(paper, context)
                         all_papers.append(paper)
             
             return all_papers
+
+    def calculate_context_match(self, paper: SearchResult, context: str) -> float:
+        context_score = 0.0
+        
+        paper_text = f"{paper.title} {paper.venue or ''}".lower()
+        context_lower = context.lower()
+        
+        if self.research_context:
+            research_words = set(self.research_context.lower().split())
+            paper_words = set(paper_text.split())
+            overlap = len(research_words.intersection(paper_words))
+            context_score += (overlap / len(research_words)) * 0.4 if research_words else 0
+        
+        if self.field_keywords:
+            field_matches = sum(1 for kw in self.field_keywords if kw.lower() in paper_text)
+            context_score += (field_matches / len(self.field_keywords)) * 0.3
+        
+        if self.document_category and self.document_category.lower() in paper_text:
+            context_score += 0.3
+        
+        return min(context_score, 1.0)
 
     async def _search_provider_with_circuit_breaker(self, session: aiohttp.ClientSession, provider: str, query: str, max_results: int) -> List[SearchResult]:
         try:
@@ -238,7 +291,7 @@ class AcademicCitationProcessor:
         params = {
             'query': query, 
             'limit': max_results, 
-            'fields': 'title,authors,year,venue,citationCount,url,publicationDate'
+            'fields': 'title,authors,year,venue,citationCount,url,publicationDate,fieldsOfStudy'
         }
         
         async with session.get(url, params=params) as response:
@@ -361,7 +414,9 @@ class AcademicCitationProcessor:
             return 0.0
         
         title_overlap = len(sentence_words.intersection(title_words)) / len(sentence_words)
-        score = title_overlap * 0.7
+        score = title_overlap * 0.5
+        
+        score += paper.context_match * 0.3
         
         if paper.year and paper.year >= 2020:
             score *= 1.3
@@ -401,7 +456,7 @@ class AcademicCitationProcessor:
     async def process_single_sentence_async(self, sentence_data: dict) -> dict:
         try:
             sentence_text = sentence_data['text']
-            papers = await self.search_all_providers_async(sentence_text)
+            papers = await self.search_all_providers_async(sentence_text, sentence_text)
             
             if not papers:
                 return None
@@ -414,7 +469,7 @@ class AcademicCitationProcessor:
             if not relevant_papers:
                 return None
             
-            best_paper = max(relevant_papers, key=lambda x: x.relevance_score)
+            best_paper = max(relevant_papers, key=lambda x: x.relevance_score + x.context_match)
             
             if not best_paper.year or (best_paper.year and best_paper.year < 2015):
                 return None
@@ -430,6 +485,7 @@ class AcademicCitationProcessor:
                     "venue": best_paper.venue or '',
                     "citations": best_paper.citations,
                     "relevance_score": round(best_paper.relevance_score, 3),
+                    "context_match": round(best_paper.context_match, 3),
                     "source": best_paper.source,
                 },
                 "metadata": {
@@ -443,12 +499,24 @@ class AcademicCitationProcessor:
 
     async def prepare_citations_for_review(self, input_path: str, max_paragraphs: int = 1000) -> Dict[str, Any]:
         start_time = time.time()
-        logging.info(f"Starting lightning-fast citation processing for: '{input_path}'")
+        logging.info(f"Starting contextual citation processing for: '{input_path}'")
         
         if not os.path.exists(input_path):
             raise FileNotFoundError(f"Input file '{input_path}' does not exist.")
 
         doc = Document(input_path)
+        
+        # Extract full document content for Gemini
+        full_text = "\n".join([p.text for p in doc.paragraphs])
+        
+        # Get context from Gemini
+        context_data = await get_document_context_with_gemini(full_text)
+        self.research_context = context_data.get("research_context", "")
+        self.document_category = context_data.get("document_category", "")
+        self.field_keywords = context_data.get("field_keywords", [])
+        
+        logging.info(f"Gemini context acquired: Category='{self.document_category}', Context='{self.research_context}'")
+
         paragraphs_to_process = doc.paragraphs[:min(len(doc.paragraphs), max_paragraphs)]
         
         all_sentences = []
@@ -473,17 +541,23 @@ class AcademicCitationProcessor:
         calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
         selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 500))
         
-        logging.info(f"Processing {len(selected_sentences)} sentences with {self.max_concurrent} concurrent requests")
+        logging.info(f"Processing {len(selected_sentences)} sentences with context: {self.research_context}")
         
         citations = await self.batch_process_sentences_async(selected_sentences)
         
         processing_time = time.time() - start_time
-        logging.info(f"Citation processing completed in {processing_time:.2f} seconds")
+        logging.info(f"Contextual citation processing completed in {processing_time:.2f} seconds")
         
         return {
             "document_id": str(uuid.uuid4()),
             "total_citations": len(citations),
             "citations": citations,
+            "context_info": {
+                "research_context": self.research_context,
+                "document_category": self.document_category,
+                "field_keywords": self.field_keywords,
+                "detected_domain": self.document_category # Use the Gemini-detected category
+            },
             "diagnostics": {
                 "processed_paragraphs": len(set(s['actual_para_idx'] for s in selected_sentences)),
                 "processed_sentences": len(selected_sentences),
