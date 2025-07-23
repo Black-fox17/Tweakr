@@ -95,8 +95,7 @@ async def citation_review_route(
             citation_processor = AcademicCitationProcessor(
                 style="APA",
                 threshold=0.0,
-                top_k=5,
-                additional_context=collection_name,
+                top_k=5
             )
         else:
             print(f"Using standard mode for collection: {collection_name}")
