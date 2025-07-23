@@ -94,7 +94,7 @@ class TempCitationProcessor:
         return len(words) < 8 and not any(punct in text for punct in ".?!;:")
     
     def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
-        enhanced_query = f"{original_query} {self.context_data}"
+        enhanced_query = f"{original_query} {self.additional_context}"
         logging.info(f"Enhanced query: {enhanced_query}")
         return self.clean_query(enhanced_query)
 

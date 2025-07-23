@@ -89,10 +89,7 @@ class AcademicCitationProcessor:
             raise
 
     def enhance_query_with_context(self, original_query: str) -> str:
-        if self.context_data:
-            enhanced_query = f"{original_query} {self.context_data}"
-        else:
-            enhanced_query = f"{original_query} {self.additional_context}"
+        enhanced_query = f"{original_query} {self.additional_context}"
         logging.info(f"Enhanced query: {enhanced_query}")
         
         return self.clean_query(enhanced_query)
