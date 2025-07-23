@@ -13,16 +13,9 @@ from async_lru import alru_cache
 from scholarly import scholarly, ProxyGenerator
 from app.core.gemini_helper import get_document_context_with_gemini
 
-
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 
 class TempCitationProcessor:
-    """
-    Enhanced replacement for MongoDB-based citation processor using multiple academic search APIs.
-    Provides fallback mechanisms and improved error handling with proper termination controls.
-    """
-    
     def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, additional_context=""):
         self.style = style
         self.search_providers = search_providers or ["google_scholar", "semantic_scholar", "crossref", "openalex"]
@@ -33,18 +26,14 @@ class TempCitationProcessor:
         self.matched_paper_titles = []
         self.additional_context = additional_context
         self.context_data = ""
+        self.google_scholar_quota = 0
+        self.max_google_scholar_calls = 10
         
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
-        
-        # Configure scholarly to use a proxy if needed, to avoid getting blocked
-        pg = ProxyGenerator()
-        # Consider using a free proxy or a premium one if you have it
-        # success = pg.FreeProxies()
-        # scholarly.use_proxy(pg)
 
     def _calculate_api_limits_and_eta(self, total_sentences: int) -> tuple:
         if self.max_api_calls is not None:
@@ -55,7 +44,7 @@ class TempCitationProcessor:
         estimated_citations = int(total_sentences * citation_rate)
         calculated_max_calls = min(estimated_citations * avg_providers_per_search, 1000)
         
-        avg_time_per_call = 0.2  # Reduced avg time due to async nature
+        avg_time_per_call = 0.2
         estimated_eta_seconds = (calculated_max_calls / avg_providers_per_search) * avg_time_per_call
         
         self.max_api_calls = int(calculated_max_calls)
@@ -72,7 +61,6 @@ class TempCitationProcessor:
         if len(all_sentences) <= max_sentences:
             return all_sentences
         
-        # Simplified selection: prioritize sentences with academic keywords
         academic_keywords = {
             'study', 'research', 'analysis', 'data', 'results', 'findings', 'evidence',
             'method', 'approach', 'theory', 'model', 'framework', 'hypothesis',
@@ -105,7 +93,7 @@ class TempCitationProcessor:
         words = text.split()
         return len(words) < 8 and not any(punct in text for punct in ".?!;:")
     
-    def enhance_query_with_context(self, original_query: str) -> str:
+    def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
         enhanced_query = f"{original_query} {self.context_data}"
         logging.info(f"Enhanced query: {enhanced_query}")
         return self.clean_query(enhanced_query)
@@ -135,13 +123,21 @@ class TempCitationProcessor:
         
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             tasks = []
-            enhanced_query = self.enhance_query_with_context(query)
+            enhanced_query = self.enhance_query_with_context(query, self.research_context)
             print(enhanced_query)
+            
             for provider in self.search_providers:
                 if self.api_call_count >= self.max_api_calls:
                     break
                 
+                if provider == 'google_scholar' and self.google_scholar_quota >= self.max_google_scholar_calls:
+                    logging.info(f"Skipping Google Scholar - quota reached ({self.google_scholar_quota}/{self.max_google_scholar_calls})")
+                    continue
+                
                 self.api_call_count += 1
+                if provider == 'google_scholar':
+                    self.google_scholar_quota += 1
+                
                 task = self._search_provider_async(session, provider, query, max_results)
                 tasks.append(task)
             
@@ -183,8 +179,14 @@ class TempCitationProcessor:
     async def _search_google_scholar_async(self, query: str, max_results: int) -> List[Dict]:
         try:
             loop = asyncio.get_running_loop()
-            # scholarly.search_pubs is not async, so we run it in an executor
-            search_results = await loop.run_in_executor(None, lambda: scholarly.search_pubs(query))
+            
+            search_task = loop.run_in_executor(None, lambda: list(scholarly.search_pubs(query)))
+            
+            try:
+                search_results = await asyncio.wait_for(search_task, timeout=15.0)
+            except asyncio.TimeoutError:
+                logging.warning(f"Google Scholar search timed out for query: {query[:50]}")
+                return []
             
             papers = []
             for i, pub in enumerate(search_results):
@@ -209,7 +211,9 @@ class TempCitationProcessor:
         params = {'query': query, 'limit': max_results, 'fields': 'title,authors,year,venue,citationCount,url'}
         try:
             async with session.get(url, params=params) as response:
-                if response.status == 429: await asyncio.sleep(1); return []
+                if response.status == 429: 
+                    await asyncio.sleep(1)
+                    return []
                 response.raise_for_status()
                 data = await response.json()
                 return [{
@@ -218,7 +222,8 @@ class TempCitationProcessor:
                     'citations': p.get('citationCount', 0), 'source': 'Semantic Scholar'
                 } for p in data.get('data', []) if p.get('title') and p.get('authors')]
         except Exception as e:
-            logging.error(f"Error searching Semantic Scholar: {e}"); return []
+            logging.error(f"Error searching Semantic Scholar: {e}")
+            return []
 
     async def _search_crossref_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         url = 'https://api.crossref.org/works'
@@ -230,7 +235,8 @@ class TempCitationProcessor:
                 papers = []
                 for item in data.get('message', {}).get('items', []):
                     authors = [f"{a.get('given', '')} {a.get('family', '')}".strip() for a in item.get('author', [])]
-                    if not item.get('title') or not authors: continue
+                    if not item.get('title') or not authors: 
+                        continue
                     year = item.get('published-print', {}).get('date-parts', [[None]])[0][0]
                     papers.append({
                         'title': ' '.join(item.get('title', [])), 'authors': authors, 'year': year,
@@ -239,7 +245,8 @@ class TempCitationProcessor:
                     })
                 return papers
         except Exception as e:
-            logging.error(f"Error searching Crossref: {e}"); return []
+            logging.error(f"Error searching Crossref: {e}")
+            return []
 
     async def _search_openalex_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[Dict]:
         url = 'https://api.openalex.org/works'
@@ -251,7 +258,8 @@ class TempCitationProcessor:
                 papers = []
                 for work in data.get('results', []):
                     authors = [a['author'].get('display_name') for a in work.get('authorships', [])]
-                    if not work.get('title') or not authors: continue
+                    if not work.get('title') or not authors: 
+                        continue
                     venue = work.get('primary_location', {}).get('source', {}).get('display_name')
                     papers.append({
                         'title': work.get('title'), 'authors': authors, 'year': work.get('publication_year'),
@@ -260,7 +268,8 @@ class TempCitationProcessor:
                     })
                 return papers
         except Exception as e:
-            logging.error(f"Error searching OpenAlex: {e}"); return []
+            logging.error(f"Error searching OpenAlex: {e}")
+            return []
         
     def calculate_relevance_score(self, sentence: str, paper: Dict) -> float:
         if not sentence or not isinstance(sentence, str) or not paper.get('authors'):
@@ -273,19 +282,27 @@ class TempCitationProcessor:
         sentence_words = set(sentence_lower.split()) - stop_words
         title_words = set(title.split()) - stop_words
         
-        if not sentence_words: return 0.0
+        if not sentence_words: 
+            return 0.0
         
         title_overlap = len(sentence_words.intersection(title_words)) / len(sentence_words)
         score = title_overlap * 0.8
         
+        if paper.get('source') == 'Google Scholar':
+            score *= 1.3
+        
         year = paper.get('year')
         if year and str(year).isdigit():
-            if int(year) >= 2020: score *= 1.2
-            elif int(year) >= 2015: score *= 1.1
+            if int(year) >= 2020: 
+                score *= 1.2
+            elif int(year) >= 2015: 
+                score *= 1.1
         
         citations = paper.get('citations', 0)
-        if citations > 100: score *= 1.1
-        elif citations > 50: score *= 1.05
+        if citations > 100: 
+            score *= 1.1
+        elif citations > 50: 
+            score *= 1.05
         
         return min(score, 1.0)
 
@@ -305,7 +322,8 @@ class TempCitationProcessor:
         try:
             sentence_text = sentence_data['text']
             papers = await self.search_all_providers_async(sentence_text)
-            if not papers: return None
+            if not papers: 
+                return None
             
             relevant_papers = []
             for paper in papers:
@@ -314,7 +332,8 @@ class TempCitationProcessor:
                     paper['relevance_score'] = score
                     relevant_papers.append(paper)
             
-            if not relevant_papers: return None
+            if not relevant_papers: 
+                return None
             
             best_paper = max(relevant_papers, key=lambda x: x.get('relevance_score', 0))
             year = best_paper.get('year')
@@ -349,7 +368,6 @@ class TempCitationProcessor:
         
         full_text = "\n".join([p.text for p in doc.paragraphs])
         
-        # Get context from Gemini
         self.context_data = await get_document_context_with_gemini(full_text, self.additional_context)
         print(self.context_data)
         
@@ -359,7 +377,8 @@ class TempCitationProcessor:
         
         all_sentences = []
         for para_idx, para in enumerate(paragraphs_to_process):
-            if not para.text.strip() or self.is_dynamic_heading(para): continue
+            if not para.text.strip() or self.is_dynamic_heading(para): 
+                continue
             try:
                 for sent_idx, sent in enumerate(self.nlp(para.text.strip()).sents, 1):
                     if len(sent.text.strip()) >= 15:
@@ -383,7 +402,7 @@ class TempCitationProcessor:
                 "research_context": self.research_context,
                 "document_category": self.document_category,
                 "field_keywords": self.field_keywords,
-                "detected_domain": self.document_category # Use the Gemini-detected category
+                "detected_domain": self.document_category
             },
             "diagnostics": {
                 "processed_paragraphs": len(set(s['actual_para_idx'] for s in selected_sentences)),
@@ -391,5 +410,6 @@ class TempCitationProcessor:
                 "api_calls_made": self.api_call_count,
                 "max_api_calls": calculated_max_calls,
                 "estimated_eta_seconds": estimated_eta,
+                "google_scholar_calls": self.google_scholar_quota,
             }
         }
