@@ -38,18 +38,13 @@ async def get_document_context_with_gemini(content: str, additional_context: str
         {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
     ]
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        generation_config=generation_config,
-        safety_settings=safety_settings,
+        model_name="gemini-2.5-pro",
     )
 
     prompt = f"""
-        Analyze the following academic document content with the provided additional context.
-        and provide a structured JSON output with three keys:
-        1. "research_context": A concise, one-sentence summary of the core research topic or argument.
-        2. "document_category": The most specific academic field or sub-field it belongs to (e.g., "computational_linguistics", "particle_physics", "macroeconomics"). Use a single, snake_cased string.
-        3. "field_keywords": A list of 5-7 essential keywords or technical terms from the document.
-
+        Analyze the following academic document content using the provided additional context. 
+        generate a short text that can be appended to it to enhance 
+        its searchability in academic referencing tools such as Google Scholar and PubMed.
         Document Content:
         ---
         {content_sample}
@@ -57,33 +52,27 @@ async def get_document_context_with_gemini(content: str, additional_context: str
         Additional Context:
         {additional_context}
 
-        Ensure the output is based solely on the content provided and the additional context TAKE NOTE OF THE ADDITIONAL CONTEXT and make sure to return a structured json response based on the provided keys.
+        Ensure the output is a text, a sentence.
     """
 
     try:
         response = await model.generate_content_async(prompt)
-        result = json.loads(response.text)
-        
-        # Basic validation
-        if all(k in result for k in ['research_context', 'document_category', 'field_keywords']):
-            return result
-        else:
-            logging.warning("Gemini response was missing required keys.")
-            return {}
+        return response.text
             
     except Exception as e:
         logging.error(f"Error calling Gemini API or parsing response: {e}")
         return {}
 
-# if __name__ == "__main__":
-#     async def main():
-#         """
-#         Example usage of the get_document_context_with_gemini function.
-#         """
-#         sample_content = """
-#         This document discusses the implications of quantum computing on cryptography, focusing on Shor's algorithm and its potential to break RSA encryption.
-#         """
-#         context = await get_document_context_with_gemini(sample_content)
-#         print(context)
-#     import asyncio
-#     asyncio.run(main())
+if __name__ == "__main__":
+    async def main():
+        """
+        Example usage of the get_document_context_with_gemini function.
+        """
+        sample_content = """
+        This document discusses the implications of quantum computing on cryptography, focusing on Shor's algorithm and its potential to break RSA encryption.
+        """
+        context = "Quantum computing, cryptography, Shor's algorithm, RSA encryption"
+        context = await get_document_context_with_gemini(sample_content, context)
+        print(context)
+    import asyncio
+    asyncio.run(main())

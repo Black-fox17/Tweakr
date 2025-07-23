@@ -74,9 +74,7 @@ class AcademicCitationProcessor:
         
         self.additional_context = additional_context
 
-        self.research_context = ""
-        self.document_category = ""
-        self.field_keywords = []
+        self.context_data = ""
         
         self.semaphore = Semaphore(max_concurrent)
         self.session_cache = weakref.WeakValueDictionary()
@@ -90,14 +88,12 @@ class AcademicCitationProcessor:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
 
-    def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
-        enhanced_query = original_query
-        if self.document_category:
-            enhanced_query = f"{enhanced_query} {self.document_category}"
-        
-        if self.field_keywords:
-            field_terms = " ".join(self.field_keywords[:3])
-            enhanced_query = f"{enhanced_query} {field_terms}"
+    def enhance_query_with_context(self, original_query: str) -> str:
+        if self.context_data:
+            enhanced_query = f"{original_query} {self.context_data}"
+        else:
+            enhanced_query = f"{original_query} {self.additional_context}"
+        logging.info(f"Enhanced query: {enhanced_query}")
         
         return self.clean_query(enhanced_query)
 
@@ -204,8 +200,7 @@ class AcademicCitationProcessor:
             if self.api_call_count >= self.max_api_calls:
                 return []
             
-            enhanced_query = self.enhance_query_with_context(query, context)
-            print(enhanced_query)
+            enhanced_query = self.enhance_query_with_context(query)
             if not enhanced_query or len(enhanced_query) < 5:
                 return []
             
@@ -508,12 +503,9 @@ class AcademicCitationProcessor:
         full_text = "\n".join([p.text for p in doc.paragraphs])
         
         # Get context from Gemini
-        context_data = await get_document_context_with_gemini(full_text, self.additional_context)
-        self.research_context = context_data.get("research_context", "")
-        self.document_category = context_data.get("document_category", "")
-        self.field_keywords = context_data.get("field_keywords", [])
+        self.context_data = await get_document_context_with_gemini(full_text, self.additional_context)
         
-        logging.info(f"Gemini context acquired: Category='{self.document_category}', Context='{self.research_context}'")
+        logging.info(f"Gemini context acquired: Context='{self.context_data}'")
 
         paragraphs_to_process = doc.paragraphs[:min(len(doc.paragraphs), max_paragraphs)]
         
