@@ -205,7 +205,7 @@ class AcademicCitationProcessor:
                 return []
             
             enhanced_query = self.enhance_query_with_context(query, context)
-            
+            print(enhanced_query)
             if not enhanced_query or len(enhanced_query) < 5:
                 return []
             

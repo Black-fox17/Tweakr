@@ -7,9 +7,11 @@ import tempfile
 from docx import Document
 
 from app.core.intext_citation import AcademicCitationProcessor
+from api.v1.services.temp_citation import TempCitationProcessor
 from app.core.wordcount import count_words_in_docx
 import logging
 import os
+import time
 
 citations = APIRouter(prefix="/citations", tags=["Citations"])
 
@@ -75,7 +77,8 @@ async def document_category(input_file: UploadFile = File(...)):
 @citations.post("/get-citation")
 async def citation_review_route(
     input_file: UploadFile = File(...),
-    collection_name: str = Form(...)
+    collection_name: str = Form(...),
+    lightning_speed: bool = Form(True)
 ):
     """
     Route for handling citation review process with collection fallback.
@@ -86,13 +89,23 @@ async def citation_review_route(
         temp_file.write(await input_file.read())
 
     try:
-        # Initialize the citation processor
-        citation_processor = AcademicCitationProcessor(
-            style="APA",
-            threshold=0.0,
-            top_k=5,
-            additional_context = collection_name,
-        )
+        # Initialize the citation processor based on the lightning_speed flag
+        if lightning_speed:
+            print(f"Using lightning speed mode for collection: {collection_name}")
+            citation_processor = AcademicCitationProcessor(
+                style="APA",
+                threshold=0.0,
+                top_k=5,
+                additional_context=collection_name,
+            )
+        else:
+            print(f"Using standard mode for collection: {collection_name}")
+            citation_processor = TempCitationProcessor(
+                style="APA",
+                threshold=0.0,
+                top_k=5,
+                additional_context=collection_name,
+            )
 
         # Prepare citations for review
         citation_review_data = await citation_processor.prepare_citations_for_review(temp_file_path)
@@ -102,7 +115,7 @@ async def citation_review_route(
             "document_id": citation_review_data["document_id"],
             "total_citations": citation_review_data["total_citations"],
             "citations": citation_review_data["citations"],
-            "context_info": citation_review_data["context_info"],
+            "context_info": citation_review_data.get("context_info", {}),
         }
 
         return response_data
