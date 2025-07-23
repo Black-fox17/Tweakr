@@ -123,7 +123,7 @@ class TempCitationProcessor:
         
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             tasks = []
-            enhanced_query = self.enhance_query_with_context(query, self.research_context)
+            enhanced_query = self.enhance_query_with_context(query, "")
             print(enhanced_query)
             
             for provider in self.search_providers:
@@ -398,12 +398,6 @@ class TempCitationProcessor:
             "document_id": str(uuid.uuid4()),
             "total_citations": len(citations),
             "citations": citations,
-            "context_info": {
-                "research_context": self.research_context,
-                "document_category": self.document_category,
-                "field_keywords": self.field_keywords,
-                "detected_domain": self.document_category
-            },
             "diagnostics": {
                 "processed_paragraphs": len(set(s['actual_para_idx'] for s in selected_sentences)),
                 "processed_sentences": len(selected_sentences),
