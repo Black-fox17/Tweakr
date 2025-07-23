@@ -74,7 +74,9 @@ class AcademicCitationProcessor:
         
         self.additional_context = additional_context
 
-        self.context_data = ""
+        self.research_context = ""
+        self.document_category = ""
+        self.field_keywords = []
         
         self.semaphore = Semaphore(max_concurrent)
         self.session_cache = weakref.WeakValueDictionary()
@@ -88,9 +90,14 @@ class AcademicCitationProcessor:
             logging.error("SpaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
             raise
 
-    def enhance_query_with_context(self, original_query: str) -> str:
-        enhanced_query = f"{original_query} {self.additional_context}"
-        logging.info(f"Enhanced query: {enhanced_query}")
+    def enhance_query_with_context(self, original_query: str, sentence_context: str = "") -> str:
+        enhanced_query = original_query
+        if self.document_category:
+            enhanced_query = f"{enhanced_query} {self.document_category}"
+        
+        if self.field_keywords:
+            field_terms = " ".join(self.field_keywords[:3])
+            enhanced_query = f"{enhanced_query} {field_terms}"
         
         return self.clean_query(enhanced_query)
 
@@ -131,7 +138,7 @@ class AcademicCitationProcessor:
             'survey', 'interview', 'protocol', 'algorithm', 'simulation'
         }
         
-        context_keywords = set([self.context_data])
+        context_keywords = set(self.field_keywords + [self.research_context, self.document_category])
         context_keywords = {kw.lower() for kw in context_keywords if kw}
         
         scored_sentences = []
@@ -197,7 +204,8 @@ class AcademicCitationProcessor:
             if self.api_call_count >= self.max_api_calls:
                 return []
             
-            enhanced_query = self.enhance_query_with_context(query)
+            enhanced_query = self.enhance_query_with_context(query, context)
+            
             if not enhanced_query or len(enhanced_query) < 5:
                 return []
             
@@ -240,11 +248,18 @@ class AcademicCitationProcessor:
         paper_text = f"{paper.title} {paper.venue or ''}".lower()
         context_lower = context.lower()
         
-        if self.context_data:
-            research_words = set(self.context_data.lower().split())
+        if self.research_context:
+            research_words = set(self.research_context.lower().split())
             paper_words = set(paper_text.split())
             overlap = len(research_words.intersection(paper_words))
             context_score += (overlap / len(research_words)) * 0.4 if research_words else 0
+        
+        if self.field_keywords:
+            field_matches = sum(1 for kw in self.field_keywords if kw.lower() in paper_text)
+            context_score += (field_matches / len(self.field_keywords)) * 0.3
+        
+        if self.document_category and self.document_category.lower() in paper_text:
+            context_score += 0.3
         
         return min(context_score, 1.0)
 
@@ -493,9 +508,12 @@ class AcademicCitationProcessor:
         full_text = "\n".join([p.text for p in doc.paragraphs])
         
         # Get context from Gemini
-        self.context_data = await get_document_context_with_gemini(full_text, self.additional_context)
+        context_data = await get_document_context_with_gemini(full_text, self.additional_context)
+        self.research_context = context_data.get("research_context", "")
+        self.document_category = context_data.get("document_category", "")
+        self.field_keywords = context_data.get("field_keywords", [])
         
-        logging.info(f"Gemini context acquired: Context='{self.context_data}'")
+        logging.info(f"Gemini context acquired: Category='{self.document_category}', Context='{self.research_context}'")
 
         paragraphs_to_process = doc.paragraphs[:min(len(doc.paragraphs), max_paragraphs)]
         
@@ -521,6 +539,7 @@ class AcademicCitationProcessor:
         calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
         selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 500))
         
+        logging.info(f"Processing {len(selected_sentences)} sentences with context: {self.research_context}")
         
         citations = await self.batch_process_sentences_async(selected_sentences)
         
@@ -531,6 +550,12 @@ class AcademicCitationProcessor:
             "document_id": str(uuid.uuid4()),
             "total_citations": len(citations),
             "citations": citations,
+            "context_info": {
+                "research_context": self.research_context,
+                "document_category": self.document_category,
+                "field_keywords": self.field_keywords,
+                "detected_domain": self.document_category # Use the Gemini-detected category
+            },
             "diagnostics": {
                 "processed_paragraphs": len(set(s['actual_para_idx'] for s in selected_sentences)),
                 "processed_sentences": len(selected_sentences),
