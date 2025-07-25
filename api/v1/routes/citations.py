@@ -86,7 +86,7 @@ async def citation_review_route(
     input_file: UploadFile = File(...),
     collection_name: str = Form(...),
     lightning_speed: bool = Form(True),
-    education_level: Optional[EducationLevel] = Form(None),
+    education_level: EducationLevel = Form("BSC"),
 
 ):
     """
