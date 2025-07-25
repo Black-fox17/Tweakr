@@ -16,6 +16,7 @@ from asyncio import Semaphore, Queue
 import weakref
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -59,7 +60,7 @@ class CircuitBreaker:
             raise e
 
 class AcademicCitationProcessor:
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50, education_level="BSC"):
         self.style = style
         self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
         self.threshold = threshold
@@ -69,6 +70,7 @@ class AcademicCitationProcessor:
         self.api_call_count = 0
         self.matched_paper_titles = []
         
+        self.education_level = education_level
         self.semaphore = Semaphore(max_concurrent)
         self.session_cache = weakref.WeakValueDictionary()
         self.circuit_breakers = {provider: CircuitBreaker() for provider in self.search_providers}
@@ -415,8 +417,9 @@ class AcademicCitationProcessor:
                 return None
             
             best_paper = max(relevant_papers, key=lambda x: x.relevance_score)
-            
-            if not best_paper.year or (best_paper.year and best_paper.year < 2015):
+            year_within = 10 if self.education_level == "BSC" else 5 if self.education_level == "Masters" else 3
+            year_scaled = datetime.now().year - year_within
+            if not best_paper.year or (best_paper.year and best_paper.year < year_scaled):
                 return None
 
             return {

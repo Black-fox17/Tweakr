@@ -12,6 +12,7 @@ from app.core.wordcount import count_words_in_docx
 import logging
 import os
 import time
+from enum import Enum
 
 citations = APIRouter(prefix="/citations", tags=["Citations"])
 
@@ -74,11 +75,19 @@ async def document_category(input_file: UploadFile = File(...)):
     valid_category = "healthcare_management"
     return{"category": valid_category}
     
+
+class EducationLevel(str, Enum):
+    BSC = "BSC"
+    MASTERS = "Masters"
+    PHD = "PhD"
+
 @citations.post("/get-citation")
 async def citation_review_route(
     input_file: UploadFile = File(...),
     collection_name: str = Form(...),
-    lightning_speed: bool = Form(True)
+    lightning_speed: bool = Form(True),
+    education_level: EducationLevel = Form(...),
+
 ):
     """
     Route for handling citation review process with collection fallback.
@@ -95,7 +104,8 @@ async def citation_review_route(
             citation_processor = AcademicCitationProcessor(
                 style="APA",
                 threshold=0.0,
-                top_k=5
+                top_k=5,
+                education_level=education_level.value,
             )
         else:
             print(f"Using standard mode for collection: {collection_name}")
@@ -104,6 +114,7 @@ async def citation_review_route(
                 threshold=0.0,
                 top_k=5,
                 additional_context=collection_name,
+                education_level=education_level.value
             )
 
         # Prepare citations for review
