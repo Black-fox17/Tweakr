@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, Form, Depends
+from fastapi import APIRouter, File, UploadFile, Form, Depends, Optional
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from io import BytesIO
@@ -86,7 +86,7 @@ async def citation_review_route(
     input_file: UploadFile = File(...),
     collection_name: str = Form(...),
     lightning_speed: bool = Form(True),
-    education_level: EducationLevel = Form(...),
+    education_level: Optional[EducationLevel] = Form(None),
 
 ):
     """
