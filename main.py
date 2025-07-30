@@ -25,7 +25,7 @@ async def keep_service_awake():
                 print(f"[KeepAlive] Pinged service: {response.status_code}")
         except Exception as e:
             print(f"[KeepAlive] Error pinging service: {e}")
-        await asyncio.sleep(10)  # wait 10 seconds before pinging again
+        await asyncio.sleep(120)  # wait 120 seconds before pinging again
 
 
 def custom_openapi():
