@@ -15,6 +15,17 @@ from api.v1.services.documents import document_service
 from api.v1.services.subscription import subscription_service
 # from app.monitoring.services import request_attributes_mapper, monitoring
 from datapipeline.routes import app as datapipeline_router
+import httpx
+
+async def keep_service_awake():
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("https://salamstudy.onrender.com/health")
+                print(f"[KeepAlive] Pinged service: {response.status_code}")
+        except Exception as e:
+            print(f"[KeepAlive] Error pinging service: {e}")
+        await asyncio.sleep(10)  # wait 10 seconds before pinging again
 
 
 def custom_openapi():
@@ -63,7 +74,8 @@ async def cleanup_expired_documents():
 async def run_all_cleanup_tasks():
     await asyncio.gather(
         cleanup_expired_documents(),
-        cleanup_expired_users()
+        cleanup_expired_users(),
+        keep_service_awake()
     )
 
 def start_cleanup_task():
