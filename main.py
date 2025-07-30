@@ -75,7 +75,7 @@ async def run_all_cleanup_tasks():
     await asyncio.gather(
         cleanup_expired_documents(),
         cleanup_expired_users(),
-        keep_service_awake()
+        # keep_service_awake()
     )
 
 def start_cleanup_task():
