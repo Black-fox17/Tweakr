@@ -3,64 +3,28 @@ import json
 import uuid
 import random
 import logging
+import re
 import spacy
 from docx import Document
 from typing import List, Dict, Any, Optional
 import asyncio
 import aiohttp
-from collections import defaultdict
 from async_lru import alru_cache
-from scholarly import scholarly, ProxyGenerator
+from scholarly import scholarly
 import time
-from asyncio import Semaphore, Queue
+from asyncio import Semaphore
 import weakref
-from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from app.utils.circuit_breaker import CircuitBreaker
+from app.models.search_result import SearchResult
+from app.core.gemini_helper import enrich_sentence_with_gemini, select_sentences_for_citation_with_gemini
 
 logging.basicConfig(level=logging.INFO)
 
-@dataclass
-class SearchResult:
-    title: str
-    authors: List[str]
-    year: Optional[int]
-    venue: Optional[str]
-    url: Optional[str]
-    citations: int
-    source: str
-    relevance_score: float = 0.0
-
-class CircuitBreaker:
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
-        self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
-        self.failure_count = 0
-        self.last_failure_time = None
-        self.state = 'closed'
-    
-    async def call(self, func):
-        if self.state == 'open':
-            if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = 'half-open'
-            else:
-                raise Exception("Circuit breaker is open")
-        
-        try:
-            result = await func()
-            if self.state == 'half-open':
-                self.state = 'closed'
-                self.failure_count = 0
-            return result
-        except Exception as e:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
-            if self.failure_count >= self.failure_threshold:
-                self.state = 'open'
-            raise e
 
 class AcademicCitationProcessor:
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50, education_level="BSC"):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50,additional_context = "", education_level="BSC"):
         self.style = style
         self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
         self.threshold = threshold
@@ -70,6 +34,7 @@ class AcademicCitationProcessor:
         self.api_call_count = 0
         self.matched_paper_titles = []
         
+        self.additional_context = additional_context
         self.education_level = education_level
         self.semaphore = Semaphore(max_concurrent)
         self.session_cache = weakref.WeakValueDictionary()
@@ -100,37 +65,45 @@ class AcademicCitationProcessor:
         
         return self.max_api_calls, estimated_eta_seconds
 
-    def smart_sentence_selection(self, all_sentences: list, max_sentences: int = None) -> list:
+    def has_existing_citation(self, sentence_text: str) -> bool:
+        """
+        Checks if a sentence already contains a citation using regex.
+        Detects formats like (Author, 2023), [1], and et al.
+        """
+        citation_pattern = re.compile(
+            r'(\(\s*[^)]*?\d{4}[^)]*?\)|'  # (Author, 2023) or (see Author, 2023)
+            r'\[\s*\d+\s*\]|'              # [1] or [ 1 ]
+            r'\w+\s+et\s+al\.?)'          # Author et al. or Author et al
+        )
+        if citation_pattern.search(sentence_text):
+            return True
+        return False
+
+    async def smart_sentence_selection_async(self, all_sentences: list, max_sentences: int = None) -> list:
+        """
+        Uses AI to select sentences that are most likely to require a citation.
+        """
         if not all_sentences:
             return []
-        
-        if max_sentences is None:
-            max_sentences = min(len(all_sentences), 500)
-        
-        if len(all_sentences) <= max_sentences:
-            return all_sentences
-        
-        academic_keywords = {
-            'study', 'research', 'analysis', 'data', 'results', 'findings', 'evidence',
-            'method', 'approach', 'theory', 'model', 'framework', 'hypothesis',
-            'significant', 'correlation', 'impact', 'effect', 'relationship',
-            'according', 'reported', 'demonstrated', 'showed', 'indicated',
-            'suggests', 'concluded', 'observed', 'measured', 'tested',
-            'literature', 'review', 'quantitative', 'qualitative', 'experiment',
-            'survey', 'interview', 'protocol', 'algorithm', 'simulation'
-        }
-        
-        scored_sentences = []
-        for s in all_sentences:
-            text_lower = s['text'].lower()
-            score = sum(1 for kw in academic_keywords if kw in text_lower)
-            if len(s['text'].split()) > 10: # Increased word count for higher score
-                score += 2
-            scored_sentences.append((s, score))
-        
-        scored_sentences.sort(key=lambda x: x[1], reverse=True)
-        return [s[0] for s in scored_sentences[:max_sentences]]
 
+        max_sentences = max_sentences or 500
+        sentences_to_process = all_sentences[:max_sentences]
+        
+        sentence_texts = [s['text'] for s in sentences_to_process]
+        
+        logging.info(f"Asking AI to select sentences for citation from a pool of {len(sentence_texts)}...")
+        ai_selected_texts = await select_sentences_for_citation_with_gemini(sentence_texts)
+        logging.info(f"AI selected {len(ai_selected_texts)} sentences.")
+
+        # Create a set for quick lookups
+        ai_selected_set = set(ai_selected_texts)
+        
+        # Filter the original sentence objects based on the AI's selection
+        final_selection = [s for s in sentences_to_process if s['text'] in ai_selected_set]
+        
+        return final_selection
+
+    
     def is_dynamic_heading(self, para) -> bool:
         text = para.text.strip()
         if not text:
@@ -403,7 +376,9 @@ class AcademicCitationProcessor:
     async def process_single_sentence_async(self, sentence_data: dict) -> dict:
         try:
             sentence_text = sentence_data['text']
-            papers = await self.search_all_providers_async(sentence_text)
+            optmized_sentence = await enrich_sentence_with_gemini(sentence_text, self.additional_context)
+            logging.debug(f"Optimized sentence: {optmized_sentence}")
+            papers = await self.search_all_providers_async(optmized_sentence)
             
             if not papers:
                 return None
@@ -463,7 +438,7 @@ class AcademicCitationProcessor:
                 sentences = list(self.nlp(para.text.strip()).sents)
                 for sent_idx, sent in enumerate(sentences, 1):
                     text = sent.text.strip()
-                    if len(text) >= 15 and len(text.split()) >= 5:
+                    if len(text) >= 15 and len(text.split()) >= 5 and not self.has_existing_citation(text):
                         all_sentences.append({
                             'text': text,
                             'actual_para_idx': para_idx + 1,
@@ -474,7 +449,9 @@ class AcademicCitationProcessor:
 
         total_sentences = len(all_sentences)
         calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
-        selected_sentences = self.smart_sentence_selection(all_sentences, min(total_sentences, 500))
+        
+        # Use the new AI-powered sentence selection
+        selected_sentences = await self.smart_sentence_selection_async(all_sentences, min(total_sentences, 500))
         
         logging.info(f"Processing {len(selected_sentences)} sentences with {self.max_concurrent} concurrent requests")
         
@@ -493,7 +470,7 @@ class AcademicCitationProcessor:
                 "api_calls_made": self.api_call_count,
                 "max_api_calls": calculated_max_calls,
                 "processing_time_seconds": round(processing_time, 2),
-                "sentences_per_second": round(len(selected_sentences) / processing_time, 2),
+                "sentences_per_second": round(len(selected_sentences) / processing_time, 2) if processing_time > 0 else 0,
             }
         }
 

@@ -13,8 +13,6 @@ import asyncio
 from threading import Thread
 from api.v1.services.documents import document_service
 from api.v1.services.subscription import subscription_service
-# from app.monitoring.services import request_attributes_mapper, monitoring
-from datapipeline.routes import app as datapipeline_router
 import httpx
 
 async def keep_service_awake():
@@ -128,7 +126,6 @@ app.add_middleware(
 
 # app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
 # app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
-app.include_router(datapipeline_router, prefix="/datapipeline", tags=['DATAPIPELINE'])
 app.include_router(api_version_one)
 
 

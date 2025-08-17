@@ -106,6 +106,7 @@ async def citation_review_route(
                 style="APA",
                 threshold=0.0,
                 top_k=5,
+                additional_context=collection_name,
                 education_level=education_level.value,
             )
         else:
