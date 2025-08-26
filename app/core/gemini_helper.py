@@ -159,17 +159,6 @@ async def select_sentences_for_citation_with_gemini(sentences: List[str]) -> Lis
         Instructions:
         1. Review the following list of sentences.
         2. Identify every sentence that should be supported by a reference in an academic paper.
-        3. Select sentences that contain:
-           - Specific claims or assertions
-           - Data or statistics
-           - Research findings
-           - Factual statements that need verification
-           - References to studies or experiments
-        4. Do NOT select sentences that are:
-           - Personal opinions
-           - General observations
-           - Transition sentences
-           - Methodology descriptions without specific claims
 
         Sentences to Analyze:
         {chunk}
