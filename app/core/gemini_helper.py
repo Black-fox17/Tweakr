@@ -46,7 +46,7 @@ async def enrich_sentence_with_gemini(sentence: str, domain: str) -> str:
         return ""
 
     # Using a newer model version can sometimes provide better results
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
+    model = genai.GenerativeModel(model_name="gemini-2.5-pro")
     
     prompt = f"""
     You are an assistant that reformulates short sentences so they are suitable
@@ -83,7 +83,7 @@ async def get_document_context_with_gemini(content: str, additional_context: str
     """
     content_sample = content[:4000] if len(content) > 4000 else content
 
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash-latest")
+    model = genai.GenerativeModel(model_name="gemini-2.5-pro")
 
     prompt = f"""
     Analyze the following academic document content with the provided additional context.
@@ -141,7 +141,7 @@ async def select_sentences_for_citation_with_gemini(sentences: List[str]) -> Lis
     if not sentences:
         return []
 
-    model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
+    model = genai.GenerativeModel(model_name="gemini-2.5-pro")
     
     def create_chunks(lst, n):
         for i in range(0, len(lst), n):
@@ -153,8 +153,8 @@ async def select_sentences_for_citation_with_gemini(sentences: List[str]) -> Lis
     for chunk in sentence_chunks:
         prompt = f"""
         You are a meticulous research assistant. Your task is to analyze a list of sentences
-        and identify which ones make specific claims, present data, or state facts that
-        require an academic citation.
+        and identify which ones require an academic citation choose as many as possible fit based on the length of
+        the whole sentences, the length is {len(sentences)}.
 
         Instructions:
         1. Review the following list of sentences.
