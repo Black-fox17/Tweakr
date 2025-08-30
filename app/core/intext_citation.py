@@ -24,13 +24,12 @@ logging.basicConfig(level=logging.INFO)
 
 
 class AcademicCitationProcessor:
-    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50,additional_context = "", education_level="BSC"):
+    def __init__(self, style="APA", search_providers=None, threshold=0.0, top_k=5, max_api_calls=None, max_concurrent=50, additional_context="", education_level="BSC"):
         self.style = style
-        self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex"]
+        self.search_providers = search_providers or ["semantic_scholar", "crossref", "openalex", "pubmed"]
         self.threshold = threshold
         self.top_k = top_k
         self.max_api_calls = max_api_calls
-        self.max_concurrent = max_concurrent
         self.api_call_count = 0
         self.matched_paper_titles = []
         
@@ -53,10 +52,9 @@ class AcademicCitationProcessor:
             return self.max_api_calls, 0
         
         citation_rate = 1
-        avg_providers_per_search = 5
+        avg_providers_per_search = len(self.search_providers)
         estimated_citations = int(total_sentences * citation_rate)
-        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 150)
-        calculated_max_calls = 1000
+        calculated_max_calls = min(estimated_citations * avg_providers_per_search, 1500)
         
         avg_time_per_call = 0.3
         estimated_eta_seconds = calculated_max_calls * avg_time_per_call
@@ -66,23 +64,16 @@ class AcademicCitationProcessor:
         return self.max_api_calls, estimated_eta_seconds
 
     def has_existing_citation(self, sentence_text: str) -> bool:
-        """
-        Checks if a sentence already contains a citation using regex.
-        Detects formats like (Author, 2023), [1], and et al.
-        """
         citation_pattern = re.compile(
-            r'(\(\s*[^)]*?\d{4}[^)]*?\)|'  # (Author, 2023) or (see Author, 2023)
-            r'\[\s*\d+\s*\]|'              # [1] or [ 1 ]
-            r'\w+\s+et\s+al\.?)'          # Author et al. or Author et al
+            r'(\(\s*[^)]*?\d{4}[^)]*?\)|'
+            r'\[\s*\d+\s*\]|'
+            r'\w+\s+et\s+al\.?)'
         )
         if citation_pattern.search(sentence_text):
             return True
         return False
 
     async def smart_sentence_selection_async(self, all_sentences: list, max_sentences: int = None) -> list:
-        """
-        Uses AI to select sentences that are most likely to require a citation.
-        """
         if not all_sentences:
             return []
 
@@ -95,15 +86,12 @@ class AcademicCitationProcessor:
         ai_selected_texts = await select_sentences_for_citation_with_gemini(sentence_texts)
         logging.info(f"AI selected {len(ai_selected_texts)} sentences.")
 
-        # Create a set for quick lookups
         ai_selected_set = set(ai_selected_texts)
         
-        # Filter the original sentence objects based on the AI's selection
         final_selection = [s for s in sentences_to_process if s['text'] in ai_selected_set]
         
         return final_selection
 
-    
     def is_dynamic_heading(self, para) -> bool:
         text = para.text.strip()
         if not text:
@@ -204,6 +192,27 @@ class AcademicCitationProcessor:
                 return await self._search_openalex_async(session, query, max_results)
             elif provider == 'google_scholar':
                 return await self._search_google_scholar_async(query, max_results)
+            elif provider == 'pubmed':
+                return await self._search_pubmed_async(session, query, max_results)
+            elif provider == 'embase':
+                return await self._search_embase_async(session, query, max_results)
+            elif provider == 'cochrane':
+                return await self._search_cochrane_async(session, query, max_results)
+            elif provider == 'scopus':
+                return await self._search_scopus_async(session, query, max_results)
+            elif provider == 'web_of_science':
+                return await self._search_web_of_science_async(session, query, max_results)
+            elif provider == 'cinahl':
+                return await self._search_cinahl_async(session, query, max_results)
+            elif provider == 'psycinfo':
+                return await self._search_psycinfo_async(session, query, max_results)
+            elif provider == 'who_global_index_medicus':
+                return await self._search_who_global_index_medicus_async(session, query, max_results)
+            elif provider == 'health_medical_complete':
+                return await self._search_health_medical_complete_async(session, query, max_results)
+            else:
+                logging.warning(f"Unknown search provider: {provider}")
+                return []
         except Exception as e:
             logging.debug(f"Failed to search {provider}: {e}")
             return []
@@ -307,9 +316,13 @@ class AcademicCitationProcessor:
                     break
                 
                 bib = pub.get('bib', {})
+                authors_list = bib.get('author', []) 
+                if isinstance(authors_list, str):
+                    authors_list = [authors_list]
+                
                 results.append(SearchResult(
                     title=bib.get('title'),
-                    authors=bib.get('author', []) if isinstance(bib.get('author'), list) else [bib.get('author')] if bib.get('author') else [],
+                    authors=authors_list,
                     year=int(bib.get('pub_year')) if bib.get('pub_year') and str(bib.get('pub_year')).isdigit() else None,
                     venue=bib.get('venue'),
                     url=pub.get('pub_url'),
@@ -320,6 +333,108 @@ class AcademicCitationProcessor:
         except Exception as e:
             logging.debug(f"Error searching Google Scholar: {e}")
             return []
+
+    async def _search_pubmed_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        API_KEY = os.environ.get("NCBI_API_KEY") 
+        base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+        search_url = f"{base_url}esearch.fcgi"
+        summary_url = f"{base_url}esummary.fcgi"
+
+        params_search = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": max_results,
+            "retmode": "json",
+            "sort": "relevance",
+        }
+        if API_KEY:
+            params_search["api_key"] = API_KEY
+
+        results = []
+        try:
+            async with session.get(search_url, params=params_search) as response:
+                response.raise_for_status()
+                search_data = await response.json()
+                id_list = search_data.get("esearchresult", {}).get("idlist", [])
+            
+            if not id_list:
+                return []
+
+            params_summary = {
+                "db": "pubmed",
+                "id": ",".join(id_list),
+                "retmode": "json",
+            }
+            if API_KEY:
+                params_summary["api_key"] = API_KEY
+
+            async with session.get(summary_url, params=params_summary) as response:
+                response.raise_for_status()
+                summary_data = await response.json()
+                
+                for uid in id_list:
+                    doc_summary = summary_data.get("result", {}).get(uid, {})
+                    
+                    title = doc_summary.get("title")
+                    authors_raw = doc_summary.get("authors", [])
+                    authors = [a.get("name") for a in authors_raw if a.get("name")]
+                    year = None
+                    pubdate = doc_summary.get("pubdate")
+                    if pubdate:
+                        try:
+                            year = int(pubdate.split()[0])
+                        except ValueError:
+                            pass
+
+                    journal = doc_summary.get("source")
+                    pubmed_url = f"https://pubmed.ncbi.nlm.nih.gov/{uid}/"
+
+                    if title and authors:
+                        results.append(SearchResult(
+                            title=title,
+                            authors=authors,
+                            year=year,
+                            venue=journal,
+                            url=pubmed_url,
+                            citations=0,
+                            source='PubMed'
+                        ))
+        except Exception as e:
+            logging.debug(f"Error searching PubMed: {e}")
+        return results
+
+    async def _search_embase_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("Embase search not implemented. Requires specific API access.")
+        return []
+
+    async def _search_cochrane_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("Cochrane Library search not implemented. Requires specific API access.")
+        return []
+
+    async def _search_scopus_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("Scopus search not implemented. Requires commercial API subscription.")
+        return []
+
+    async def _search_web_of_science_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("Web of Science search not implemented. Requires commercial API subscription.")
+        return []
+
+    async def _search_cinahl_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("CINAHL search not implemented. Requires specific API access, likely EBSCO.")
+        return []
+    
+    async def _search_psycinfo_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("PsycINFO search not implemented. Requires specific API access, likely APA PsycNET.")
+        return []
+
+    async def _search_who_global_index_medicus_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("WHO GLOBAL Index Medicus search not implemented. Requires specific API research.")
+        return []
+
+    async def _search_health_medical_complete_async(self, session: aiohttp.ClientSession, query: str, max_results: int) -> List[SearchResult]:
+        logging.warning("Health and Medical Complete (ProQuest) search not implemented. Requires specific API access.")
+        return []
 
     def calculate_relevance_score(self, sentence: str, paper: SearchResult) -> float:
         if not sentence or not isinstance(sentence, str) or not paper.authors:
@@ -394,7 +509,8 @@ class AcademicCitationProcessor:
             best_paper = max(relevant_papers, key=lambda x: x.relevance_score)
             year_within = 10 if self.education_level == "BSC" else 5 if self.education_level == "Masters" else 3
             year_scaled = datetime.now().year - year_within
-            if not best_paper.year or (best_paper.year and best_paper.year < year_scaled):
+            
+            if best_paper.year is not None and best_paper.year < year_scaled:
                 return None
 
             return {
@@ -450,7 +566,6 @@ class AcademicCitationProcessor:
         total_sentences = len(all_sentences)
         calculated_max_calls, estimated_eta = self._calculate_api_limits_and_eta(total_sentences)
         
-        # Use the new AI-powered sentence selection
         selected_sentences = await self.smart_sentence_selection_async(all_sentences, min(total_sentences, 500))
         
         logging.info(f"Processing {len(selected_sentences)} sentences with {self.max_concurrent} concurrent requests")
