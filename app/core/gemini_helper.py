@@ -153,9 +153,7 @@ async def select_sentences_for_citation_with_gemini(sentences: List[str]) -> Lis
     for chunk in sentence_chunks:
         prompt = f"""
         You are a meticulous research assistant. Your task is to analyze a list of sentences
-        and identify which ones require an academic citation choose as many as possible fit based on the length of
-        the whole sentences, the length is {len(sentences)}.
-
+        and identify which ones require an academic citation choose as many as possible
         Instructions:
         1. Review the following list of sentences.
         2. Identify every sentence that should be supported by a reference in an academic paper.
@@ -170,6 +168,7 @@ async def select_sentences_for_citation_with_gemini(sentences: List[str]) -> Lis
                 generation_config={
                     "response_mime_type": "application/json",
                     "response_schema": CITATION_SELECTION_SCHEMA,
+                    "temperature": 0.7,
                 }
             )
             
