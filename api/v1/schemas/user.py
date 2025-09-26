@@ -43,6 +43,7 @@ class UserEmailSender(BaseModel):
 class UserCreate(BaseModel):
     """Schema to create a user"""
     email: EmailStr
+    referralLink: Optional[str] = "123"
     password: Annotated[
         str, StringConstraints(
             min_length=8,

@@ -13,6 +13,7 @@ class User(BaseTableModel):
     email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
     email_verified = Column(Boolean, server_default=text("false"))
+    referralLink = Column(String, nullable= True, unique=True)
     
     payments = relationship("Payments", back_populates="user", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
