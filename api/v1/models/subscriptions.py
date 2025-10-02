@@ -16,5 +16,4 @@ class Subscription(BaseTableModel):
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("SubscriptionPlans", back_populates="subscriptions")
-    payments = relationship("Payments", back_populates="subscription", cascade="all, delete-orphan")
     
