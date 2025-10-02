@@ -13,5 +13,4 @@ class Payments(BaseTableModel):
     
     # Relationships
     user = relationship("User", back_populates="payments")
-    subscription = relationship("Subscription", back_populates="payments")
  
