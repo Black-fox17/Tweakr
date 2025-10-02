@@ -11,6 +11,7 @@ from api.v1.models.user import User
 from api.v1.services.subscription import subscription_service
 from api.db.database import get_db
 from api.v1.services.user import user_service
+from api.v1.schemas.payments import CreatePaymentSchema
 from api.v1.schemas.subscription import CreateSubscriptionSchema, CreateSubscriptionResponse
 import httpx
 from decouple import config
@@ -116,6 +117,19 @@ async def update_a_subscription(
         data=jsonable_encoder(plan),
     )
 
+@subscription.post("/payment/history")
+async def create_payment_history(
+    request: CreatePaymentSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(user_service.get_current_user)
+):
+    payment_history = subscription_service.create_payment_service(db=db, user_id=current_user.id, request=request)
+
+    return success_response(
+        status_code=status.HTTP_200_OK,
+        message="Plans created successfully",
+        data=jsonable_encoder(payment_history),
+    )
 
 # @subscription.delete("/billing-plans/{subscription_id}", response_model=success_response)
 # async def delete_a_subscription(

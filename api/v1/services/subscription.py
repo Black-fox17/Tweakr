@@ -2,9 +2,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from api.v1.models.subscriptions_plan import SubscriptionPlans
 from api.v1.models.subscriptions import Subscription
+from api.v1.models.payments import Payments
 from typing import Any, Optional
 from api.core.base.services import Service
 from api.v1.schemas.subscription import CreateSubscriptionSchema
+from api.v1.schemas.payments import CreatePaymentSchema
 from api.utils.db_validators import check_model_existence
 from api.db.database import get_db
 from fastapi import Depends, HTTPException, status
@@ -68,6 +70,19 @@ class SubscriptionService(Service):
             db.commit()
             db.refresh(user_subscription)
             return existing_plan
+        
+    def create_payment_service(self, db:Session, user_id: str, request: CreatePaymentSchema):
+        payment_history= Payments(
+            user_id = user_id,
+            amount= request.amount,
+            payment_date= datetime.now(),
+            currency= request.currency,
+            payment_method= request.payment_method
+        )
+        db.add(payment_history)
+        db.commit()
+        db.refresh(payment_history)
+        return payment_history
 
     def delete(self, db: Session, id: str):
         """
