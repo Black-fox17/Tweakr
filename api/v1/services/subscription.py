@@ -74,7 +74,7 @@ class SubscriptionService(Service):
     def create_payment_service(self, db:Session, user_id: str, request: CreatePaymentSchema):
         payment_history= Payments(
             user_id = user_id,
-            amount= request.amount,
+            amount= str(request.amount),
             payment_date= datetime.now(),
             currency= request.currency,
             payment_method= request.payment_method

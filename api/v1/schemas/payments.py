@@ -5,6 +5,6 @@ from api.v1.schemas.base_schema import ResponseBase
 
 
 class CreatePaymentSchema(BaseModel):
-    amount: str
+    amount: float
     currency: str
     payment_method: str
