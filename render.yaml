@@ -1,9 +1,17 @@
 services:
-  # A Docker web service
   - type: web
     name: tweakr-api
     runtime: python
     plan: free
     autoDeploy: false
-    buildCommand: pip install -r requirements.txt
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4  # spaCy 3.7.x is fully compatible with Python 3.12
+
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel Cython
+      pip install -r requirements.txt --prefer-binary
+      python -m spacy download en_core_web_sm
+
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
