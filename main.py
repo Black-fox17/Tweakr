@@ -115,6 +115,7 @@ async def scalar_html():
         title=app.title,
     )
 
+clients: Dict[str, WebSocket] = {}
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     user_id = websocket.query_params.get("userId")
