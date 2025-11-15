@@ -74,10 +74,10 @@ class UserService(Service):
     
     def fetch_subscription(self,db:Session, user_id: str):
         try:
-            user = db.query(User).filter(User.id == user_id).first()
-            organization = db.query(Organization).filter(Organization.referralLink == user.referralLink).first()
+            # user = db.query(User).filter(User.id == user_id).first()
+            # organization = db.query(Organization).filter(Organization.referralLink == user.referralLink).first()
             user_subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-            if user_subscribed or organization.plan == 'enterprise':
+            if user_subscribed:
                 return True
             else:
                 return False
