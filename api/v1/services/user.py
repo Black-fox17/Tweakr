@@ -15,7 +15,7 @@ from api.core.base.services import Service
 from api.db.database import get_db
 
 from api.utils.db_validators import check_model_existence
-from api.v1.models import User, Subscription
+from api.v1.models import User, Subscription, Organization
 from api.v1.schemas import user
 from api.utils.settings import settings
 
@@ -74,8 +74,10 @@ class UserService(Service):
     
     def fetch_subscription(self,db:Session, user_id: str):
         try:
+            user = db.query(User).filter(User.id == user_id).first()
+            organization = db.query(Organization).filter(Organization.referralLink == user.referralLink).first()
             user_subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-            if user_subscribed:
+            if user_subscribed or organization.plan == 'enterprise':
                 return True
             else:
                 return False

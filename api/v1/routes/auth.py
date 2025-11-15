@@ -43,8 +43,6 @@ def register(
     db: Session = Depends(get_db),
 ):
     """Endpoint for a user to register their account"""
-
-    # Create user account
     user = user_service.create(db=db, schema=user_schema)
 
 
@@ -52,8 +50,6 @@ def register(
     access_token = user_service.create_access_token(user_id=user.id)
     refresh_token = user_service.create_refresh_token(user_id=user.id)
 
-    # create an organization for the user
-    # Create access and refresh tokens
     access_token = user_service.create_access_token(user_id=user.id)
     refresh_token = user_service.create_refresh_token(user_id=user.id)
 

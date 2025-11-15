@@ -1,6 +1,7 @@
 import logfire
-from fastapi import FastAPI
-
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import json
+from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
@@ -114,15 +115,69 @@ async def scalar_html():
         title=app.title,
     )
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    user_id = websocket.query_params.get("userId")
+
+    if not user_id:
+        await websocket.close()
+        return
+
+    await websocket.accept()
+    clients[user_id] = websocket
+    print(f"WebSocket client connected: {user_id}. Total clients: {len(clients)}")
+
+    try:
+        while True:
+            message = await websocket.receive_text()
+
+            try:
+                data = json.loads(message)
+                to_user = data.get("to")
+                from_user = data.get("from")
+                content = data.get("content")
+
+                if not to_user or not from_user or not content:
+                    print("Invalid message received:", data)
+                    continue
+
+                print(f"Routing message from {from_user} to {to_user}")
+
+                recipient = clients.get(to_user)
+
+                if recipient:
+                    await recipient.send_text(
+                        json.dumps({"from": from_user, "content": content})
+                    )
+                    print(f"Message successfully sent to {to_user}")
+                else:
+                    print(f"Recipient {to_user} not found or connection not open.")
+
+            except Exception as e:
+                print("Failed to process message:", e)
+
+    except WebSocketDisconnect:
+        for key, value in list(clients.items()):
+            if value == websocket:
+                del clients[key]
+                print(f"WebSocket client disconnected: {key}. Total clients: {len(clients)}")
+                break
+
+    except Exception as e:
+        print("WebSocket error:", e)
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://www.tweakrr.com",  
+        "http://localhost:5173",    
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # app.include_router(auth_router, prefix="/auth", tags=["AUTH"])
 # app.include_router(references_router, prefix="/references", tags=['REFERENCES'])
