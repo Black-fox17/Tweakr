@@ -16,6 +16,7 @@ class Organization(Base):
     __tablename__ = "organisation"
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
     address = Column(Boolean, server_default=text("false"))
     phone = Column(String, nullable= True, unique=True)
     referralLink = Column(String, nullable= True)
