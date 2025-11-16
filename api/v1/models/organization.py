@@ -8,8 +8,8 @@ from api.v1.models.associations import Base
 
 
 class RoleEnum(PyEnum):
-    admin = "ADMIN"
-    user = "USER "
+    admin = "admin"
+    user = "user"
 
 
 class Organization(Base):
