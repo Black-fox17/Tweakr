@@ -18,6 +18,7 @@ from api.utils.db_validators import check_model_existence
 from api.v1.models import User, Subscription, Organization
 from api.v1.schemas import user
 from api.utils.settings import settings
+import logging
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -82,8 +83,9 @@ class UserService(Service):
         organization = db.query(Organization).filter(
             Organization.referralLink == user.referralLink
         ).first()
-        print(organization)
+        logging.info(f"Organization fetched: {organization}")
         if organization and organization.plan == "enterprise":
+            print("Enterprise plan detected")
             return True
         else:
             raise HTTPException(status_code=404, detail="Organization not found")
