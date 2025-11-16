@@ -90,11 +90,11 @@ class UserService(Service):
         #else:
             #raise HTTPException(status_code=404, detail="Organization not found")
 
-        subscribed = db.query(
-            exists().where(Subscription.user_id == user_id)
-        ).scalar()
+        subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+        if subscribed:
+            return True
 
-        return subscribed
+        return False
 
 
 
