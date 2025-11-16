@@ -72,17 +72,28 @@ class UserService(Service):
 
         return self.all_users_response(all_users, total_users, page, per_page)
     
-    def fetch_subscription(self,db:Session, user_id: str):
-        try:
-            # user = db.query(User).filter(User.id == user_id).first()
-            # organization = db.query(Organization).filter(Organization.referralLink == user.referralLink).first()
-            user_subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-            if user_subscribed:
-                return True
-            else:
-                return False
-        except Exception as e:
+    from sqlalchemy import exists
+
+    def fetch_subscription(self, db: Session, user_id: str) -> bool:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
+        organization = db.query(Organization).filter(
+            Organization.referralLink == user.referralLink
+        ).first()
+        print(organization)
+        if organization and organization.plan == "enterprise":
+            return True
+        else:
+            raise HTTPException(status_code=404, detail="Organization not found")
+
+        subscribed = db.query(
+            exists().where(Subscription.user_id == user_id)
+        ).scalar()
+
+        return subscribed
+
 
 
     def all_users_response(
