@@ -8,8 +8,8 @@ from api.v1.models.associations import Base
 
 
 class RoleEnum(PyEnum):
-    admin = "admin"
-    user = "user"
+    ADMIN = "ADMIN"
+    USER = "USER"
 
 
 class Organization(Base):
@@ -27,8 +27,7 @@ class Organization(Base):
     role = Column(
         SAEnum(RoleEnum, name="role_enum"),
         nullable=False,
-        default=RoleEnum.user.value,
-        server_default=text("'user'")
+        server_default=text("'USER'"),
     )
     profilePictureBase64 = Column(String, nullable=True)
     plan = Column(String, nullable= True)
