@@ -18,7 +18,7 @@ class Organization(Base):
     name = Column(String, nullable=False)
     address = Column(Boolean, server_default=text("false"))
     phone = Column(String, nullable= True, unique=True)
-    refferalLink = Column(String, nullable= True)
+    referralLink = Column(String, nullable= True)
     password = Column(String, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(
