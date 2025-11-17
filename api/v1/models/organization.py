@@ -36,9 +36,21 @@ class Organization(Base):
 
 
     def to_dict(self):
-        obj_dict = super().to_dict()
-        obj_dict.pop("password", None)
-        return obj_dict
+        return {
+            "id": self.id,
+            "name": self.name,
+            "email": self.email,
+            "address": self.address,
+            "phone": self.phone,
+            "referralLink": self.referralLink,
+            "createdAt": self.createdAt,
+            "updatedAt": self.updatedAt,
+            "role": self.role.value if self.role else None,
+            "profilePictureBase64": self.profilePictureBase64,
+            "plan": self.plan,
+            "emailVerified": self.emailVerified
+        }
+
 
     def __str__(self):
         return f"Organization(id={self.id}, email={self.email}, plan={self.plan})"
