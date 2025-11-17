@@ -76,24 +76,39 @@ class UserService(Service):
     from sqlalchemy import exists
 
     def fetch_subscription(self, db: Session, user_id: str) -> bool:
+        # Fetch user
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-
-        organization = db.query(Organization).filter(Organization.referralLink == user.referralLink).first()+
-        logging.info(f"Organization fetched: {organization}")
-        if organization and organization.plan == "enterprise":
-            print("Enterprise plan detected")
-            return True
+    
+        organization = (
+            db.query(Organization)
+            .filter(Organization.referralLink == user.referralLink)
+            .first()
+        )
+    
+        logging.info(f"Organization fetched: {organization.to_dict() if organization else None}")
+    
+        # If organization exists with enterprise plan → grant access
+        if organization:
+            if organization.plan == "enterprise":
+                print("Enterprise plan detected")
+                return True
         else:
             raise HTTPException(status_code=404, detail="Organization not found")
-
-        subscribed = db.query(Subscription).filter(Subscription.user_id == user_id).first()
+    
+        # Otherwise check individual subscription
+        subscribed = (
+            db.query(Subscription)
+            .filter(Subscription.user_id == user_id)
+            .first()
+        )
+    
         if subscribed:
             return True
-
+    
+        # If nothing matched
         return False
-
 
 
     def all_users_response(
