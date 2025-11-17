@@ -41,4 +41,5 @@ class Organization(Base):
         return obj_dict
 
     def __str__(self):
-        return self.email
+        return f"Organization(id={self.id}, email={self.email}, plan={self.plan})"
+
