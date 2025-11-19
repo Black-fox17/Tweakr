@@ -172,7 +172,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://www.tweakrr.com",  
-        "http://localhost:5173",    
+        "http://localhost:5173", 
+        "https://tweakr-payment.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
