@@ -1,5 +1,7 @@
 import logfire
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Response
+from PyPDF2 import PdfMerger
+import io
 import json
 from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +103,26 @@ async def redirect_to_docs():
     Redirects users from the root endpoint to the docs endpoint.
     """
     return RedirectResponse(url="/docs")
+
+@app.post("/merge-pdfs/")
+async def merge_pdfs(files: list[UploadFile] = File(...)):
+    merger = PdfMerger()
+    output_buffer = io.BytesIO()
+
+    for uploaded_file in files:
+        if uploaded_file.filename and uploaded_file.filename.lower().endswith(".pdf"):
+            content = await uploaded_file.read()
+            merger.append(io.BytesIO(content))
+
+    merger.write(output_buffer)
+    merger.close()
+    output_buffer.seek(0)
+
+    return Response(
+        content=output_buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=merged.pdf"}
+    )
 
 
 @app.get("/health")
