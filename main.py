@@ -1,6 +1,6 @@
 import logfire
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Response
-from pypdf import PdfMerger
+from pypdf import PdfReader, PdfWriter
 import io
 import json
 from typing import Dict
@@ -106,16 +106,17 @@ async def redirect_to_docs():
 
 @app.post("/merge-pdfs/")
 async def merge_pdfs(files: list[UploadFile] = File(...)):
-    merger = PdfMerger()
+    writer = PdfWriter()
     output_buffer = io.BytesIO()
 
     for uploaded_file in files:
         if uploaded_file.filename and uploaded_file.filename.lower().endswith(".pdf"):
             content = await uploaded_file.read()
-            merger.append(io.BytesIO(content))
+            reader = PdfReader(io.BytesIO(content))
+            for page in reader.pages:
+                writer.add_page(page)
 
-    merger.write(output_buffer)
-    merger.close()
+    writer.write(output_buffer)
     output_buffer.seek(0)
 
     return Response(
@@ -123,6 +124,7 @@ async def merge_pdfs(files: list[UploadFile] = File(...)):
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=merged.pdf"}
     )
+
 
 
 @app.get("/health")
