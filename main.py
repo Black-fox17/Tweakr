@@ -1,6 +1,6 @@
 import logfire
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Response
-from PyPDF2 import PdfMerger
+from pypdf import PdfMerger
 import io
 import json
 from typing import Dict
